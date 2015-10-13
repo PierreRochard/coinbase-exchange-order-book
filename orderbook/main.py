@@ -51,6 +51,9 @@ def websocket_to_order_book():
     open_ask_order_id = None
     open_ask_price = None
 
+    insufficient_btc = False
+    insufficient_usd = False
+
     r = requests.get(exchange_api_url + 'orders', auth=exchange_auth)
     orders = r.json()
     try:
@@ -128,10 +131,12 @@ def websocket_to_order_book():
             quote_book.bids.remove_order(order_id)
             if order_id == open_bid_order_id:
                 open_bid_order_id = None
+                insufficient_btc = False
         elif message_type == 'done' and side == 'sell':
             quote_book.asks.remove_order(order_id)
             if order_id == open_ask_order_id:
                 open_ask_order_id = None
+                insufficient_usd = False
 
         elif message_type == 'change' and side == 'buy':
             quote_book.bids.change(order_id, new_size)
@@ -141,9 +146,7 @@ def websocket_to_order_book():
         else:
             print(pformat(message))
 
-        spread = quote_book.asks.max() - quote_book.bids.min()
-
-        if not open_bid_order_id:
+        if not open_bid_order_id and not insufficient_usd:
             open_bid_price = round(quote_book.asks.max() - Decimal(0.04), 2)
             order = {'size': 0.01,
                      'price': str(open_bid_price),
@@ -153,9 +156,13 @@ def websocket_to_order_book():
             open_bid_order_id = requests.post(exchange_api_url + 'orders', json=order, auth=exchange_auth)
             open_bid_order_id = open_bid_order_id.json()
             print(pformat(open_bid_order_id))
-            open_bid_order_id = open_bid_order_id['id']
+            if 'id' in open_bid_order_id:
+                open_bid_order_id = open_bid_order_id['id']
+            elif 'message' in open_bid_order_id:
+                if open_bid_order_id['message'] == 'Insufficient funds':
+                    insufficient_usd = True
 
-        if not open_ask_order_id:
+        if not open_ask_order_id and not insufficient_btc:
             open_ask_price = round(quote_book.bids.min() + Decimal(0.04), 2)
             order = {'size': 0.01,
                      'price': str(open_ask_price),
@@ -165,7 +172,11 @@ def websocket_to_order_book():
             open_ask_order_id = requests.post(exchange_api_url + 'orders', json=order, auth=exchange_auth)
             open_ask_order_id = open_ask_order_id.json()
             print(pformat(open_ask_order_id))
-            open_ask_order_id = open_ask_order_id['id']
+            if 'id' in open_ask_order_id:
+                open_ask_order_id = open_ask_order_id['id']
+            elif 'message' in open_ask_order_id:
+                if open_ask_order_id['message'] == 'Insufficient funds':
+                    insufficient_btc = True
 
 
 if __name__ == '__main__':
