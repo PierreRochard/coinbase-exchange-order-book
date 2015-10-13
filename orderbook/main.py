@@ -97,6 +97,10 @@ def websocket_to_order_book():
             last_sequence = new_sequence
 
         message_type = message['type']
+
+        if message_type == 'received':
+            continue
+
         message_time = parse(message['time'])
         side = message['side']
         if 'order_id' in message:
@@ -112,10 +116,7 @@ def websocket_to_order_book():
         if 'new_size' in message:
             new_size = Decimal(message['new_size'])
 
-        if message_type == 'received':
-            pass
-
-        elif message_type == 'open' and side == 'buy':
+        if message_type == 'open' and side == 'buy':
             quote_book.bids.insert(order_id, remaining_size, price)
         elif message_type == 'open' and side == 'sell':
             quote_book.asks.insert(order_id, remaining_size, price)
@@ -147,50 +148,72 @@ def websocket_to_order_book():
             print(pformat(message))
 
         if not open_bid_order_id and not insufficient_usd:
+            if insufficient_btc:
+                size = 0.03
+            else:
+                size = 0.01
             open_bid_price = round(quote_book.asks.max() - Decimal(0.04), 2)
-            order = {'size': 0.01,
+            order = {'size': size,
                      'price': str(open_bid_price),
                      'side': 'buy',
                      'product_id': 'BTC-USD',
                      'post_only': True}
-            open_bid_order_id = requests.post(exchange_api_url + 'orders', json=order, auth=exchange_auth)
-            open_bid_order_id = open_bid_order_id.json()
-            print(pformat(open_bid_order_id))
-            if 'id' in open_bid_order_id:
-                open_bid_order_id = open_bid_order_id['id']
-            elif 'message' in open_bid_order_id:
-                if open_bid_order_id['message'] == 'Insufficient funds':
+            response = requests.post(exchange_api_url + 'orders', json=order, auth=exchange_auth)
+            response = response.json()
+            print(pformat(response))
+            if 'id' in response:
+                open_bid_order_id = response['id']
+                if response['status'] == 'rejected':
+                    open_bid_order_id = None
+            elif 'message' in response:
+                if response['message'] == 'Insufficient funds':
                     insufficient_usd = True
 
         if not open_ask_order_id and not insufficient_btc:
+            if insufficient_usd:
+                size = 0.03
+            else:
+                size = 0.01
             open_ask_price = round(quote_book.bids.min() + Decimal(0.04), 2)
-            order = {'size': 0.01,
+            order = {'size': size,
                      'price': str(open_ask_price),
                      'side': 'sell',
                      'product_id': 'BTC-USD',
                      'post_only': True}
-            open_ask_order_id = requests.post(exchange_api_url + 'orders', json=order, auth=exchange_auth)
-            open_ask_order_id = open_ask_order_id.json()
-            print(pformat(open_ask_order_id))
-            if 'id' in open_ask_order_id:
-                open_ask_order_id = open_ask_order_id['id']
-            elif 'message' in open_ask_order_id:
-                if open_ask_order_id['message'] == 'Insufficient funds':
+            response = requests.post(exchange_api_url + 'orders', json=order, auth=exchange_auth)
+            response = response.json()
+            print(pformat(response))
+            if 'id' in response:
+                open_ask_order_id = response['id']
+                if response['status'] == 'rejected':
+                    open_ask_order_id = None
+            elif 'message' in response:
+                if response['message'] == 'Insufficient funds':
                     insufficient_btc = True
 
-        if Decimal(open_bid_price) < round(quote_book.asks.max() - Decimal(0.06), 2):
+        if Decimal(open_bid_price) < round(quote_book.asks.max() - Decimal(0.06), 2) and open_bid_order_id:
             response = requests.delete(exchange_api_url + 'orders/' + open_bid_order_id, auth=exchange_auth)
             if response.status_code == 200:
                 open_bid_order_id = None
             else:
-                print(pformat(response.json()))
+                response = response.json()
+                if 'message' in response:
+                    if response['message'] == 'Order already done':
+                        open_bid_order_id = None
+                else:
+                    print(pformat(response.json()))
 
-        if Decimal(open_ask_price) > round(quote_book.asks.max() + Decimal(0.06), 2):
+        if Decimal(open_ask_price) > round(quote_book.asks.max() + Decimal(0.06), 2) and open_ask_order_id:
             response = requests.delete(exchange_api_url + 'orders/' + open_ask_order_id, auth=exchange_auth)
             if response.status_code == 200:
                 open_ask_order_id = None
             else:
-                print(pformat(response.json()))
+                response = response.json()
+                if 'message' in response:
+                    if response['message'] == 'Order already done':
+                        open_ask_order_id = None
+                else:
+                    print(pformat(response.json()))
 
 
 if __name__ == '__main__':
