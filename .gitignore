@@ -74,3 +74,5 @@ pip-selfcheck.json
 
 orderbook/config.py
 orderbook/log.csv
+
+.idea/*
