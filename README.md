@@ -2,6 +2,7 @@
 
 Based on https://github.com/yoblin/PyLimitBook
 
+Use real money at your own risk!
 
 ## Install
 
@@ -11,6 +12,5 @@ Based on https://github.com/yoblin/PyLimitBook
 
 ## TODO
 
-Tests
-Documentation
-Market-making functionality
+1. Tests
+2. Documentation
