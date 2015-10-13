@@ -161,12 +161,15 @@ def websocket_to_order_book():
         else:
             print(pformat(message))
 
+        max_bid = Decimal(quote_book.bids.price_tree.max_key())
+        min_ask = Decimal(quote_book.asks.price_tree.min_key())
+
         if not open_bid_order_id and not insufficient_usd:
             if insufficient_btc:
                 size = 0.05
             else:
                 size = 0.01
-            open_bid_price = round(quote_book.asks.max() - Decimal(bid_spread), 2)
+            open_bid_price = round(min_ask - Decimal(bid_spread), 2)
             order = {'size': size,
                      'price': str(open_bid_price),
                      'side': 'buy',
@@ -188,7 +191,7 @@ def websocket_to_order_book():
                 size = 0.05
             else:
                 size = 0.01
-            open_ask_price = round(quote_book.bids.min() + Decimal(ask_spread), 2)
+            open_ask_price = round(max_bid + Decimal(ask_spread), 2)
             order = {'size': size,
                      'price': str(open_ask_price),
                      'side': 'sell',
@@ -205,7 +208,7 @@ def websocket_to_order_book():
                 if response['message'] == 'Insufficient funds':
                     insufficient_btc = True
 
-        if Decimal(open_bid_price) < round(quote_book.asks.max() - Decimal(bid_adjustment_spread), 2) and open_bid_order_id:
+        if Decimal(open_bid_price) < round(min_ask - Decimal(bid_adjustment_spread), 2) and open_bid_order_id:
             response = requests.delete(exchange_api_url + 'orders/' + open_bid_order_id, auth=exchange_auth)
             if response.status_code == 200:
                 open_bid_order_id = None
@@ -217,7 +220,7 @@ def websocket_to_order_book():
                 else:
                     print(pformat(response.json()))
 
-        if Decimal(open_ask_price) > round(quote_book.bids.min() + Decimal(ask_adjustment_spread), 2) and open_ask_order_id:
+        if Decimal(open_ask_price) > round(max_bid + Decimal(ask_adjustment_spread), 2) and open_ask_order_id:
             response = requests.delete(exchange_api_url + 'orders/' + open_ask_order_id, auth=exchange_auth)
             if response.status_code == 200:
                 open_ask_order_id = None
