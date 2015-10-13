@@ -7,7 +7,7 @@ Use real money at your own risk!
 ## Install
 
 1. pip3 install -r requirements.txt
-2. python3 orderbook/main.py
+2. python3 main.py
 
 
 ## TODO
