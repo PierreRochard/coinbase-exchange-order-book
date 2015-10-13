@@ -203,7 +203,7 @@ def websocket_to_order_book():
                 else:
                     print(pformat(response.json()))
 
-        if Decimal(open_ask_price) > round(quote_book.asks.max() + Decimal(0.06), 2) and open_ask_order_id:
+        if Decimal(open_ask_price) > round(quote_book.bids.min() + Decimal(0.06), 2) and open_ask_order_id:
             response = requests.delete(exchange_api_url + 'orders/' + open_ask_order_id, auth=exchange_auth)
             if response.status_code == 200:
                 open_ask_order_id = None
