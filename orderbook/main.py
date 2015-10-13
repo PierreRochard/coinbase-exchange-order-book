@@ -178,6 +178,20 @@ def websocket_to_order_book():
                 if open_ask_order_id['message'] == 'Insufficient funds':
                     insufficient_btc = True
 
+        if Decimal(open_bid_price) < round(quote_book.asks.max() - Decimal(0.06), 2):
+            response = requests.delete(exchange_api_url + 'orders/' + open_bid_order_id, auth=exchange_auth)
+            if response.status_code == 200:
+                open_bid_order_id = None
+            else:
+                print(pformat(response.json()))
+
+        if Decimal(open_ask_price) > round(quote_book.asks.max() + Decimal(0.06), 2):
+            response = requests.delete(exchange_api_url + 'orders/' + open_ask_order_id, auth=exchange_auth)
+            if response.status_code == 200:
+                open_ask_order_id = None
+            else:
+                print(pformat(response.json()))
+
 
 if __name__ == '__main__':
     loop = asyncio.get_event_loop()
