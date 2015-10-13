@@ -6,6 +6,7 @@ import json
 import logging
 from logging.handlers import RotatingFileHandler
 from pprint import pformat
+from orderbook.exchange import exchange_api_url, exchange_auth
 import random
 from socket import gaierror
 import time
@@ -34,7 +35,6 @@ quote_book = Book()
 
 @asyncio.coroutine
 def websocket_to_order_book():
-    level_3 = None
     try:
         websocket = yield from websockets.connect("wss://ws-feed.exchange.coinbase.com")
     except gaierror:
@@ -43,6 +43,27 @@ def websocket_to_order_book():
     yield from websocket.send('{"type": "subscribe", "product_id": "BTC-USD"}')
 
     last_sequence = None
+    level_3 = None
+
+    open_bid_order_id = None
+    open_bid_price = None
+
+    open_ask_order_id = None
+    open_ask_price = None
+
+    r = requests.get(exchange_api_url + 'orders', auth=exchange_auth)
+    orders = r.json()
+    try:
+        open_bid_order_id = [order['id'] for order in orders if order['side'] == 'buy'][0]
+        open_bid_price = [order['price'] for order in orders if order['side'] == 'buy'][0]
+    except IndexError:
+        pass
+    try:
+        open_ask_order_id = [order['id'] for order in orders if order['side'] == 'sell'][0]
+        open_ask_price = [order['price'] for order in orders if order['side'] == 'sell'][0]
+    except IndexError:
+        pass
+
     while True:
         message = yield from websocket.recv()
 
@@ -105,8 +126,12 @@ def websocket_to_order_book():
 
         elif message_type == 'done' and side == 'buy':
             quote_book.bids.remove_order(order_id)
+            if order_id == open_bid_order_id:
+                open_bid_order_id = None
         elif message_type == 'done' and side == 'sell':
             quote_book.asks.remove_order(order_id)
+            if order_id == open_ask_order_id:
+                open_ask_order_id = None
 
         elif message_type == 'change' and side == 'buy':
             quote_book.bids.change(order_id, new_size)
@@ -115,6 +140,32 @@ def websocket_to_order_book():
 
         else:
             print(pformat(message))
+
+        spread = quote_book.asks.max() - quote_book.bids.min()
+
+        if not open_bid_order_id:
+            open_bid_price = round(quote_book.asks.max() - Decimal(0.04), 2)
+            order = {'size': 0.01,
+                     'price': str(open_bid_price),
+                     'side': 'buy',
+                     'product_id': 'BTC-USD',
+                     'post_only': True}
+            open_bid_order_id = requests.post(exchange_api_url + 'orders', json=order, auth=exchange_auth)
+            open_bid_order_id = open_bid_order_id.json()
+            print(pformat(open_bid_order_id))
+            open_bid_order_id = open_bid_order_id['id']
+
+        if not open_ask_order_id:
+            open_ask_price = round(quote_book.bids.min() + Decimal(0.04), 2)
+            order = {'size': 0.01,
+                     'price': str(open_ask_price),
+                     'side': 'sell',
+                     'product_id': 'BTC-USD',
+                     'post_only': True}
+            open_ask_order_id = requests.post(exchange_api_url + 'orders', json=order, auth=exchange_auth)
+            open_ask_order_id = open_ask_order_id.json()
+            print(pformat(open_ask_order_id))
+            open_ask_order_id = open_ask_order_id['id']
 
 
 if __name__ == '__main__':
