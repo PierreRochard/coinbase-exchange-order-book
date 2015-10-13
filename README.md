@@ -1,4 +1,4 @@
-# Full real-time Coinbase Exchange order book
+# Coinbase Exchange Order Book
 
 Based on https://github.com/yoblin/PyLimitBook
 
