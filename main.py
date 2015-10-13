@@ -147,11 +147,15 @@ def websocket_to_order_book():
             if order_id == open_bid_order_id:
                 open_bid_order_id = None
                 insufficient_btc = False
+                if message['reason'] == 'filled':
+                    print('bid filled')
         elif message_type == 'done' and side == 'sell':
             quote_book.asks.remove_order(order_id)
             if order_id == open_ask_order_id:
                 open_ask_order_id = None
                 insufficient_usd = False
+                if message['reason'] == 'filled':
+                    print('ask filled')
 
         elif message_type == 'change' and side == 'buy':
             quote_book.bids.change(order_id, new_size)
@@ -190,11 +194,12 @@ def websocket_to_order_book():
                      'post_only': True}
             response = requests.post(exchange_api_url + 'orders', json=order, auth=exchange_auth)
             response = response.json()
-            print(pformat(response))
             if 'id' in response:
                 open_bid_order_id = response['id']
                 if response['status'] == 'rejected':
                     open_bid_order_id = None
+                else:
+                    print('new bid')
             elif 'message' in response:
                 if response['message'] == 'Insufficient funds':
                     insufficient_usd = True
@@ -212,11 +217,12 @@ def websocket_to_order_book():
                      'post_only': True}
             response = requests.post(exchange_api_url + 'orders', json=order, auth=exchange_auth)
             response = response.json()
-            print(pformat(response))
             if 'id' in response:
                 open_ask_order_id = response['id']
                 if response['status'] == 'rejected':
                     open_ask_order_id = None
+                else:
+                    print('new ask')
             elif 'message' in response:
                 if response['message'] == 'Insufficient funds':
                     insufficient_btc = True
@@ -225,6 +231,7 @@ def websocket_to_order_book():
             response = requests.delete(exchange_api_url + 'orders/' + open_bid_order_id, auth=exchange_auth)
             if response.status_code == 200:
                 open_bid_order_id = None
+                print('canceled bid')
             else:
                 response = response.json()
                 if 'message' in response:
@@ -237,6 +244,7 @@ def websocket_to_order_book():
             response = requests.delete(exchange_api_url + 'orders/' + open_ask_order_id, auth=exchange_auth)
             if response.status_code == 200:
                 open_ask_order_id = None
+                print('canceled ask')
             else:
                 response = response.json()
                 if 'message' in response:
