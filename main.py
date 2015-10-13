@@ -149,7 +149,7 @@ def websocket_to_order_book():
 
         if not open_bid_order_id and not insufficient_usd:
             if insufficient_btc:
-                size = 0.03
+                size = 0.05
             else:
                 size = 0.01
             open_bid_price = round(quote_book.asks.max() - Decimal(0.04), 2)
@@ -171,7 +171,7 @@ def websocket_to_order_book():
 
         if not open_ask_order_id and not insufficient_btc:
             if insufficient_usd:
-                size = 0.03
+                size = 0.05
             else:
                 size = 0.01
             open_ask_price = round(quote_book.bids.min() + Decimal(0.04), 2)
