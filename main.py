@@ -115,7 +115,7 @@ def websocket_to_order_book():
             continue
 
         message_time = parse(message['time'])
-        print('Latency: {0:.6f} secs'.format((datetime.now(tzlocal())-message_time).microseconds*1e-6), end='\r')
+
         side = message['side']
         if 'order_id' in message:
             order_id = message['order_id']
@@ -163,7 +163,20 @@ def websocket_to_order_book():
 
         max_bid = Decimal(quote_book.bids.price_tree.max_key())
         min_ask = Decimal(quote_book.asks.price_tree.min_key())
-
+        if open_ask_price and not insufficient_btc:
+            float_open_ask_price = float(open_ask_price)
+        else:
+            float_open_ask_price = 0.0
+        if open_bid_price and not insufficient_usd:
+            float_open_bid_price = float(open_bid_price)
+        else:
+            float_open_bid_price = 0.0
+        print('Latency: {0:.6f} secs, '
+              'Min ask: {1:.2f}, Max bid: {2:.2f}, Spread: {3:.2f}, '
+              'Your ask: {4:.2f}, Your bid: {5:.2f}'.format(
+            ((datetime.now(tzlocal()) - message_time).microseconds * 1e-6),
+            min_ask, max_bid, min_ask - max_bid,
+            float_open_ask_price, float_open_bid_price), end='\r')
         if not open_bid_order_id and not insufficient_usd:
             if insufficient_btc:
                 size = 0.05
