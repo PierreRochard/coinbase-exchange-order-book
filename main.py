@@ -269,16 +269,16 @@ def websocket_to_order_book():
                 open_orders.open_ask_order_id = response.json()['id']
                 open_orders.open_ask_price = open_ask_price
                 file_logger.info('new ask @ {0}'.format(open_ask_price))
+                open_orders.open_ask_rejections = 0
             elif 'status' in response.json() and response.json()['status'] == 'rejected':
                 open_orders.open_ask_order_id = None
                 open_orders.open_ask_price = None
-                open_orders.open_bid_rejections = 0.0
+                open_orders.open_ask_rejections += 0.01
                 file_logger.warn('rejected: new ask @ {0}'.format(open_ask_price))
             elif 'message' in response.json() and response.json()['message'] == 'Insufficient funds':
                 open_orders.insufficient_btc = True
                 open_orders.open_ask_order_id = None
                 open_orders.open_ask_price = None
-                open_orders.open_bid_rejections += 0.01
                 file_logger.warn('Insufficient BTC')
             else:
                 file_logger.error('Unhandled response: {0}'.format(pformat(response.json())))
