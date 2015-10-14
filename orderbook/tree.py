@@ -68,9 +68,3 @@ class Tree(object):
         if len(order.order_list) == 0:
             self.remove_price(order.price)
         del self.order_map[order_id]
-
-    def max(self):
-        return min(self.price_tree)
-
-    def min(self):
-        return max(self.price_tree)

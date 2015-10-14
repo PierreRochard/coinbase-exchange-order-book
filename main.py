@@ -9,7 +9,6 @@ from logging.handlers import RotatingFileHandler
 from pprint import pformat
 from dateutil.tz import tzlocal
 from orderbook.exchange import exchange_api_url, exchange_auth
-import pytz
 import random
 from socket import gaierror
 import time
@@ -26,18 +25,90 @@ class Book(object):
         self.bids = Tree()
         self.asks = Tree()
 
+        self.level3_sequence = 0
+        self.first_sequence = 0
+        self.last_sequence = 0
+
+    def get_level3(self):
+        level_3 = requests.get('http://api.exchange.coinbase.com/products/BTC-USD/book', params={'level': 3}).json()
+        [self.bids.insert(bid[2], Decimal(bid[1]), Decimal(bid[0])) for bid in level_3['bids']]
+        [self.asks.insert(ask[2], Decimal(ask[1]), Decimal(ask[0])) for ask in level_3['asks']]
+        self.level3_sequence = level_3['sequence']
+
+
+class OpenOrders(object):
+    def __init__(self):
+        self.open_bid_order_id = None
+        self.open_bid_price = None
+
+        self.open_ask_order_id = None
+        self.open_ask_price = None
+
+        self.insufficient_btc = False
+        self.insufficient_usd = False
+
+        self.open_ask_rejections = 0.0
+        self.open_bid_rejections = 0.0
+
+    def get_open_orders(self):
+        open_orders = requests.get(exchange_api_url + 'orders', auth=exchange_auth).json()
+
+        try:
+            self.open_bid_order_id = [order['id'] for order in open_orders if order['side'] == 'buy'][0]
+            self.open_bid_price = [order['price'] for order in open_orders if order['side'] == 'buy'][0]
+        except IndexError:
+            pass
+
+        try:
+            self.open_ask_order_id = [order['id'] for order in open_orders if order['side'] == 'sell'][0]
+            self.open_ask_price = [order['price'] for order in open_orders if order['side'] == 'sell'][0]
+        except IndexError:
+            pass
+
+    @property
+    def float_open_bid_price(self):
+        if self.open_bid_price:
+            return float(self.open_bid_price)
+        else:
+            return 0.0
+
+    @property
+    def float_open_ask_price(self):
+        if self.open_ask_price:
+            return float(self.open_ask_price)
+        else:
+            return 0.0
+
+
+class Spreads(object):
+    def __init__(self):
+        # amount over the highest ask that you are willing to buy btc for
+        self.bid_spread = 0.04
+        # spread at which your bid is cancelled
+        self.bid_adjustment_spread = 0.06
+
+        # amount below the lowest bid that you are willing to sell btc for
+        self.ask_spread = 0.04
+        # spread at which your ask is cancelled
+        self.ask_adjustment_spread = 0.06
+
 
 file_logger = logging.getLogger('file_log')
 file_handler = RotatingFileHandler('log.csv', 'a', 10 * 1024 * 1024, 100)
 file_handler.setFormatter(logging.Formatter('%(asctime)s, %(levelname)s, %(message)s'))
 file_handler.setLevel(logging.INFO)
 file_logger.addHandler(file_handler)
-
-quote_book = Book()
+file_logger.addHandler(logging.StreamHandler())
+file_logger.setLevel(logging.INFO)
 
 
 @asyncio.coroutine
 def websocket_to_order_book():
+
+    order_book = Book()
+    open_orders = OpenOrders()
+    spreads = Spreads()
+
     try:
         websocket = yield from websockets.connect("wss://ws-feed.exchange.coinbase.com")
     except gaierror:
@@ -45,69 +116,34 @@ def websocket_to_order_book():
         return
     yield from websocket.send('{"type": "subscribe", "product_id": "BTC-USD"}')
 
-    last_sequence = None
-    level_3 = None
-
-    open_bid_order_id = None
-    open_bid_price = None
-
-    open_ask_order_id = None
-    open_ask_price = None
-
-    insufficient_btc = False
-    insufficient_usd = False
-
-    # amount over the highest ask that you are willing to buy btc for
-    bid_spread = 0.04
-    # spread at which your bid is cancelled
-    bid_adjustment_spread = 0.06
-
-    # amount below the lowest bid that you are willing to sell btc for
-    ask_spread = 0.04
-    # spread at which your ask is cancelled
-    ask_adjustment_spread = 0.06
-
-    r = requests.get(exchange_api_url + 'orders', auth=exchange_auth)
-    orders = r.json()
-    try:
-        open_bid_order_id = [order['id'] for order in orders if order['side'] == 'buy'][0]
-        open_bid_price = [order['price'] for order in orders if order['side'] == 'buy'][0]
-    except IndexError:
-        pass
-    try:
-        open_ask_order_id = [order['id'] for order in orders if order['side'] == 'sell'][0]
-        open_ask_price = [order['price'] for order in orders if order['side'] == 'sell'][0]
-    except IndexError:
-        pass
+    order_book.get_level3()
+    open_orders.get_open_orders()
 
     while True:
         message = yield from websocket.recv()
 
-        if not level_3:
-            level_3 = requests.get('http://api.exchange.coinbase.com/products/BTC-USD/book',
-                                   params={'level': 3}).json()
-            for bid in level_3['bids']:
-                quote_book.bids.insert(bid[2], Decimal(bid[1]), Decimal(bid[0]))
-            for ask in level_3['asks']:
-                quote_book.asks.insert(ask[2], Decimal(ask[1]), Decimal(ask[0]))
-
         if message is None:
-            file_logger.error('Websocket message is None!')
-            raise Exception()
+            file_logger.error('Websocket message is None.')
+            return False
 
         try:
             message = json.loads(message)
         except TypeError:
             file_logger.error('JSON did not load, see ' + str(message))
-            continue
+            return False
 
         new_sequence = int(message['sequence'])
-        if not last_sequence:
-            last_sequence = int(message['sequence'])
+
+        if not order_book.first_sequence:
+            order_book.first_sequence = new_sequence
+            order_book.last_sequence = new_sequence
+            file_logger.info('Gap between level 3 and first message: {0}'
+                             .format(new_sequence - order_book.level3_sequence))
         else:
-            if (new_sequence - last_sequence - 1) != 0:
-                print('sequence gap: {0}'.format(new_sequence - last_sequence))
-            last_sequence = new_sequence
+            if (new_sequence - order_book.last_sequence - 1) != 0:
+                file_logger.error('sequence gap: {0}'.format(new_sequence - order_book.last_sequence))
+                return False
+            order_book.last_sequence = new_sequence
 
         message_type = message['type']
 
@@ -131,127 +167,150 @@ def websocket_to_order_book():
             new_size = Decimal(message['new_size'])
 
         if message_type == 'open' and side == 'buy':
-            quote_book.bids.insert(order_id, remaining_size, price)
+            order_book.bids.insert(order_id, remaining_size, price)
         elif message_type == 'open' and side == 'sell':
-            quote_book.asks.insert(order_id, remaining_size, price)
+            order_book.asks.insert(order_id, remaining_size, price)
 
         elif message_type == 'match' and side == 'buy':
-            quote_book.bids.match(maker_order_id, size)
-            quote_book.matches.appendleft((message_time, side, size, price))
+            order_book.bids.match(maker_order_id, size)
+            order_book.matches.appendleft((message_time, side, size, price))
         elif message_type == 'match' and side == 'sell':
-            quote_book.asks.match(maker_order_id, size)
-            quote_book.matches.appendleft((message_time, side, size, price))
+            order_book.asks.match(maker_order_id, size)
+            order_book.matches.appendleft((message_time, side, size, price))
 
         elif message_type == 'done' and side == 'buy':
-            quote_book.bids.remove_order(order_id)
-            if order_id == open_bid_order_id:
-                open_bid_order_id = None
-                insufficient_btc = False
+            order_book.bids.remove_order(order_id)
+            if order_id == open_orders.open_bid_order_id:
                 if message['reason'] == 'filled':
-                    print('bid filled')
+                    file_logger.info('bid filled @ {0}'.format(open_orders.open_bid_price))
+                open_orders.open_bid_order_id = None
+                open_orders.open_bid_price = None
+                open_orders.insufficient_btc = False
         elif message_type == 'done' and side == 'sell':
-            quote_book.asks.remove_order(order_id)
-            if order_id == open_ask_order_id:
-                open_ask_order_id = None
-                insufficient_usd = False
+            order_book.asks.remove_order(order_id)
+            if order_id == open_orders.open_ask_order_id:
                 if message['reason'] == 'filled':
-                    print('ask filled')
+                    file_logger.info('ask filled @ {0}'.format(open_orders.open_ask_price))
+                open_orders.open_ask_order_id = None
+                open_orders.open_ask_price = None
+                open_orders.insufficient_usd = False
 
         elif message_type == 'change' and side == 'buy':
-            quote_book.bids.change(order_id, new_size)
+            order_book.bids.change(order_id, new_size)
         elif message_type == 'change' and side == 'sell':
-            quote_book.asks.change(order_id, new_size)
+            order_book.asks.change(order_id, new_size)
 
         else:
-            print(pformat(message))
+            file_logger.error('Unhandled message: {0}'.format(pformat(message)))
+            raise Exception()
 
-        max_bid = Decimal(quote_book.bids.price_tree.max_key())
-        min_ask = Decimal(quote_book.asks.price_tree.min_key())
-        if open_ask_price and not insufficient_btc:
-            float_open_ask_price = float(open_ask_price)
-        else:
-            float_open_ask_price = 0.0
-        if open_bid_price and not insufficient_usd:
-            float_open_bid_price = float(open_bid_price)
-        else:
-            float_open_bid_price = 0.0
+        max_bid = Decimal(order_book.bids.price_tree.max_key())
+        min_ask = Decimal(order_book.asks.price_tree.min_key())
+        if min_ask - max_bid < 0:
+            file_logger.error('Negative spread: {0}'.format(min_ask - max_bid ))
+            return False
+
         print('Latency: {0:.6f} secs, '
               'Min ask: {1:.2f}, Max bid: {2:.2f}, Spread: {3:.2f}, '
-              'Your ask: {4:.2f}, Your bid: {5:.2f}'.format(
+              'Your ask: {4:.2f}, Your bid: {5:.2f}, Your spread: {6:.2f}'.format(
             ((datetime.now(tzlocal()) - message_time).microseconds * 1e-6),
             min_ask, max_bid, min_ask - max_bid,
-            float_open_ask_price, float_open_bid_price), end='\r')
-        if not open_bid_order_id and not insufficient_usd:
-            if insufficient_btc:
+            open_orders.float_open_ask_price, open_orders.float_open_bid_price,
+        open_orders.float_open_ask_price - open_orders.float_open_bid_price), end='\r')
+
+        if not open_orders.open_bid_order_id and not open_orders.insufficient_usd:
+            if open_orders.insufficient_btc:
                 size = 0.05
+                spread = 0.01
             else:
                 size = 0.01
-            open_bid_price = round(min_ask - Decimal(bid_spread), 2)
+                spread = spreads.bid_spread
+            open_bid_price = Decimal(round(min_ask - Decimal(spread) - Decimal(open_orders.open_bid_rejections), 2))
             order = {'size': size,
                      'price': str(open_bid_price),
                      'side': 'buy',
                      'product_id': 'BTC-USD',
                      'post_only': True}
             response = requests.post(exchange_api_url + 'orders', json=order, auth=exchange_auth)
-            response = response.json()
-            if 'id' in response:
-                open_bid_order_id = response['id']
-                if response['status'] == 'rejected':
-                    open_bid_order_id = None
-                else:
-                    print('new bid')
-            elif 'message' in response:
-                if response['message'] == 'Insufficient funds':
-                    insufficient_usd = True
+            if 'status' in response.json() and response.json()['status'] == 'pending':
+                open_orders.open_bid_order_id = response.json()['id']
+                open_orders.open_bid_price = open_bid_price
+                open_orders.open_bid_rejections = 0.0
+                file_logger.info('new bid @ {0}'.format(open_bid_price))
+            elif 'status' in response.json() and response.json()['status'] == 'rejected':
+                open_orders.open_bid_order_id = None
+                open_orders.open_bid_price = None
+                open_orders.open_bid_rejections += 0.01
+                file_logger.warn('rejected: new bid @ {0}'.format(open_bid_price))
+            elif 'message' in response.json() and response.json()['message'] == 'Insufficient funds':
+                open_orders.insufficient_usd = True
+                open_orders.open_bid_order_id = None
+                open_orders.open_bid_price = None
+                file_logger.warn('Insufficient USD')
+            else:
+                file_logger.error('Unhandled response: {0}'.format(pformat(response.json())))
+                raise Exception()
 
-        if not open_ask_order_id and not insufficient_btc:
-            if insufficient_usd:
+        if not open_orders.open_ask_order_id and not open_orders.insufficient_btc:
+            if open_orders.insufficient_usd:
                 size = 0.05
+                spread = 0.01
             else:
                 size = 0.01
-            open_ask_price = round(max_bid + Decimal(ask_spread), 2)
+                spread = spreads.ask_spread
+            open_ask_price = Decimal(round(max_bid + Decimal(spread) + Decimal(open_orders.open_ask_rejections), 2))
             order = {'size': size,
                      'price': str(open_ask_price),
                      'side': 'sell',
                      'product_id': 'BTC-USD',
                      'post_only': True}
             response = requests.post(exchange_api_url + 'orders', json=order, auth=exchange_auth)
-            response = response.json()
-            if 'id' in response:
-                open_ask_order_id = response['id']
-                if response['status'] == 'rejected':
-                    open_ask_order_id = None
-                else:
-                    print('new ask')
-            elif 'message' in response:
-                if response['message'] == 'Insufficient funds':
-                    insufficient_btc = True
-
-        if Decimal(open_bid_price) < round(min_ask - Decimal(bid_adjustment_spread), 2) and open_bid_order_id:
-            response = requests.delete(exchange_api_url + 'orders/' + open_bid_order_id, auth=exchange_auth)
-            if response.status_code == 200:
-                open_bid_order_id = None
-                print('canceled bid')
+            if 'status' in response.json() and response.json()['status'] == 'pending':
+                open_orders.open_ask_order_id = response.json()['id']
+                open_orders.open_ask_price = open_ask_price
+                file_logger.info('new ask @ {0}'.format(open_ask_price))
+            elif 'status' in response.json() and response.json()['status'] == 'rejected':
+                open_orders.open_ask_order_id = None
+                open_orders.open_ask_price = None
+                open_orders.open_bid_rejections = 0.0
+                file_logger.warn('rejected: new ask @ {0}'.format(open_ask_price))
+            elif 'message' in response.json() and response.json()['message'] == 'Insufficient funds':
+                open_orders.insufficient_btc = True
+                open_orders.open_ask_order_id = None
+                open_orders.open_ask_price = None
+                open_orders.open_bid_rejections += 0.01
+                file_logger.warn('Insufficient BTC')
             else:
-                response = response.json()
-                if 'message' in response:
-                    if response['message'] == 'Order already done':
-                        open_bid_order_id = None
-                else:
-                    print(pformat(response.json()))
+                file_logger.error('Unhandled response: {0}'.format(pformat(response.json())))
+                raise Exception()
 
-        if Decimal(open_ask_price) > round(max_bid + Decimal(ask_adjustment_spread), 2) and open_ask_order_id:
-            response = requests.delete(exchange_api_url + 'orders/' + open_ask_order_id, auth=exchange_auth)
+        if open_orders.open_bid_order_id and Decimal(open_orders.open_bid_price) < round(min_ask - Decimal(spreads.bid_adjustment_spread), 2):
+            response = requests.delete(exchange_api_url + 'orders/' + str(open_orders.open_bid_order_id), auth=exchange_auth)
             if response.status_code == 200:
-                open_ask_order_id = None
-                print('canceled ask')
+                file_logger.info('canceled bid @ {0}'.format(open_orders.open_bid_price))
+                open_orders.open_bid_order_id = None
+                open_orders.open_bid_price = None
+            elif 'message' in response.json() and response.json()['message'] == 'order not found':
+                file_logger.info('bid already canceled: {0} @ {1}'.format(open_orders.open_bid_order_id, open_orders.open_bid_price))
+                open_orders.open_bid_order_id = None
+                open_orders.open_bid_price = None
             else:
-                response = response.json()
-                if 'message' in response:
-                    if response['message'] == 'Order already done':
-                        open_ask_order_id = None
-                else:
-                    print(pformat(response.json()))
+                file_logger.error('Unhandled response: {0}'.format((pformat(response.json()))))
+                raise Exception()
+
+        if open_orders.open_ask_order_id and Decimal(open_orders.open_ask_price) > round(max_bid + Decimal(spreads.ask_adjustment_spread), 2) :
+            response = requests.delete(exchange_api_url + 'orders/' + str(open_orders.open_ask_order_id), auth=exchange_auth)
+            if response.status_code == 200:
+                file_logger.info('canceled ask @ {0}'.format(open_orders.open_ask_price))
+                open_orders.open_ask_order_id = None
+                open_orders.open_ask_price = None
+            elif 'message' in response.json() and response.json()['message'] == 'order not found':
+                file_logger.info('ask already canceled: {0} @ {1}'.format(open_orders.open_ask_order_id, open_orders.open_ask_price))
+                open_orders.open_ask_order_id = None
+                open_orders.open_ask_price = None
+            else:
+                file_logger.error('Unhandled response: {0}'.format((pformat(response.json()))))
+                raise Exception()
 
 
 if __name__ == '__main__':
