@@ -6,9 +6,7 @@ import hmac
 import hashlib
 import base64
 from requests.auth import AuthBase
-from orderbook.config import (COINBASE_EXCHANGE_API_KEY,
-                              COINBASE_EXCHANGE_API_SECRET,
-                              COINBASE_EXCHANGE_API_PASSPHRASE)
+from config import COINBASE_EXCHANGE_API_KEY, COINBASE_EXCHANGE_API_SECRET, COINBASE_EXCHANGE_API_PASSPHRASE
 
 
 class CoinbaseExchangeAuthentication(AuthBase):
@@ -35,7 +33,6 @@ class CoinbaseExchangeAuthentication(AuthBase):
 
 exchange_api_url = 'https://api.exchange.coinbase.com/'
 
-exchange_auth = CoinbaseExchangeAuthentication(COINBASE_EXCHANGE_API_KEY,
-                                               COINBASE_EXCHANGE_API_SECRET,
+exchange_auth = CoinbaseExchangeAuthentication(COINBASE_EXCHANGE_API_KEY, COINBASE_EXCHANGE_API_SECRET,
                                                COINBASE_EXCHANGE_API_PASSPHRASE)
 

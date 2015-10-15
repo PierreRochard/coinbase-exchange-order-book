@@ -72,7 +72,8 @@ pip-selfcheck.json
 # Temporary data
 .ipynb_checkpoints/
 
-orderbook/config.py
+config.py
 orderbook/log.csv
 
 .idea/*
+keys/*
