@@ -119,13 +119,17 @@ class Spreads(object):
         # spread at which your ask is cancelled
         self.ask_adjustment_spread = 0.18
 
-
-file_logger = logging.getLogger('file_log')
 file_handler = RotatingFileHandler('log.csv', 'a', 10 * 1024 * 1024, 100)
 file_handler.setFormatter(logging.Formatter('%(asctime)s, %(levelname)s, %(message)s'))
 file_handler.setLevel(logging.INFO)
+
+stream_handler = logging.StreamHandler()
+stream_handler.setFormatter(logging.Formatter('%(asctime)s, %(levelname)s, %(message)s\n'))
+stream_handler.setLevel(logging.INFO)
+
+file_logger = logging.getLogger('file_log')
+file_logger.addHandler(stream_handler)
 file_logger.addHandler(file_handler)
-file_logger.addHandler(logging.StreamHandler())
 file_logger.setLevel(logging.INFO)
 
 
