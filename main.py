@@ -29,6 +29,8 @@ class Book(object):
         self.first_sequence = 0
         self.last_sequence = 0
 
+        self.negative_spread = 0
+
     def get_level3(self):
         level_3 = requests.get('http://api.exchange.coinbase.com/products/BTC-USD/book', params={'level': 3}).json()
         [self.bids.insert(bid[2], Decimal(bid[1]), Decimal(bid[0])) for bid in level_3['bids']]
@@ -207,8 +209,13 @@ def websocket_to_order_book():
         max_bid = Decimal(order_book.bids.price_tree.max_key())
         min_ask = Decimal(order_book.asks.price_tree.min_key())
         if min_ask - max_bid < 0:
-            file_logger.error('Negative spread: {0}'.format(min_ask - max_bid ))
-            return False
+            order_book.negative_spread += 1
+            if order_book.negative_spread > 50:
+                file_logger.error('Negative spread: {0}'.format(min_ask - max_bid ))
+                return False
+            continue
+        else:
+            order_book.negative_spread = 0
 
         print('Latency: {0:.6f} secs, '
               'Min ask: {1:.2f}, Max bid: {2:.2f}, Spread: {3:.2f}, '
