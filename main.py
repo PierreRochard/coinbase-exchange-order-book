@@ -239,8 +239,9 @@ def websocket_to_order_book():
         min_ask = Decimal(order_book.asks.price_tree.min_key())
         if min_ask - max_bid < 0:
             order_book.negative_spread += 1
-            print(order_book.negative_spread)
-            if order_book.negative_spread > 100:
+            print(order_book.negative_spread, end='\r')
+            time.sleep(0.001)
+            if order_book.negative_spread > 40:
                 file_logger.error('Negative spread: {0}'.format(min_ask - max_bid ))
                 return False
             continue
