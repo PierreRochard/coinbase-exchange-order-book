@@ -13,55 +13,83 @@ session = Session(aws_access_key_id=AWS_ACCESS_KEY_ID,
                   region_name=REGION)
 
 
-# Amazon Linux AMI PV Instance Store 64-bit
-ami_id = 'ami-971066f2'
+def deploy():
+    # Amazon Linux AMI PV Instance Store 64-bit
+    ami_id = 'ami-971066f2'
 
-instance_type = 't2.micro'
+    instance_type = 't2.micro'
 
-prices = {'m1.small': 0.044}
+    prices = {'m1.small': 0.044}
 
-ec2 = session.resource('ec2')
-client = session.client('ec2')
+    ec2 = session.resource('ec2')
+    client = session.client('ec2')
 
-private_key_file = os.path.abspath('keys/{0}.pem'.format(KEY_PAIR_NAME))
+    private_key_file = os.path.abspath('keys/{0}.pem'.format(KEY_PAIR_NAME))
 
-print(private_key_file)
-if not os.path.isfile(private_key_file):
-    print('Creating new keys')
-    key = client.create_key_pair(KeyName=KEY_PAIR_NAME)
-    with open(private_key_file, 'w') as f:
-        f.write(key['KeyMaterial'])
+    print(private_key_file)
+    if not os.path.isfile(private_key_file):
+        print('Creating new keys')
+        key = client.create_key_pair(KeyName=KEY_PAIR_NAME)
+        with open(private_key_file, 'w') as f:
+            f.write(key['KeyMaterial'])
 
-instances = [instance for instance in ec2.instances.all() if instance.state['Name'] != 'terminated']
+    instances = [instance for instance in ec2.instances.all() if instance.state['Name'] != 'terminated']
 
-if not instances:
-    ec2.create_instances(ImageId=ami_id,
-                         MinCount=1,
-                         MaxCount=1,
-                         KeyName=KEY_PAIR_NAME,
-                         InstanceType='m1.small')
+    if not instances:
+        ec2.create_instances(ImageId=ami_id,
+                             MinCount=1,
+                             MaxCount=1,
+                             KeyName=KEY_PAIR_NAME,
+                             InstanceType='m1.small')
 
+    while not [instance for instance in ec2.instances.all() if instance.state['Name'] == 'running']:
+        time.sleep(5)
 
-while not [instance for instance in ec2.instances.all() if instance.state['Name'] == 'running']:
-    time.sleep(5)
-
-# Make sure you Edit inbound rules for the Security Group the instance is running on to allow
-# SSH connections
-ssh = paramiko.SSHClient()
-ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-
-for instance in [instance for instance in ec2.instances.all() if instance.state['Name'] == 'running']:
+    instance = instances[0]
     print(instance.id, instance.instance_type, instance.state,
           round((datetime.now(tzlocal()) - instance.launch_time).seconds / 60 / 60 * prices[instance.instance_type], 3),
           instance.public_dns_name, instance.public_ip_address)
-    ssh.connect(instance.public_ip_address,
-                username='ec2-user',
-                key_filename=private_key_file)
-    # "sudo yum -y install git python34 python34-pip gcc python34-devel;"
-    stdin, stdout, stderr = ssh.exec_command("git clone https://github.com/PierreRochard/coinbase-exchange-order-book.git")
-    # sudo pip-3.4 install -r requirements.txt
-    print(stderr.read().splitlines())
+
+    print(instance.security_groups[0]['GroupId'])
+    security_group = ec2.SecurityGroup(instance.security_groups[0]['GroupId'])
+    ssh_permission = [permission for permission in security_group.ip_permissions
+                      if 'ToPort' in permission and permission['ToPort'] == 22]
+    if not ssh_permission:
+        security_group.authorize_ingress(IpProtocol='tcp', FromPort=22, ToPort=22, CidrIp='0.0.0.0/0')
+
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+    ssh.connect(instance.public_ip_address, username='ec2-user', key_filename=private_key_file)
+    stdin, stdout, stderr = ssh.exec_command("sudo yum -y install git python34 python34-pip gcc python34-devel;")
+    if len(stderr.read().splitlines()) > 0:
+        print(stderr.read().splitlines())
+        print('ssh -i {0} ec2-user@{1}'.format(private_key_file, instance.public_ip_address))
+        print('sudo nano /etc/sudoers')
+        print('add a # in front of Defaults requiretty to fix this issue')
+        return False
     stdin.flush()
+    data = stdout.read().splitlines()
+    for line in data:
+        print(line)
+    stdin, stdout, stderr = ssh.exec_command("git clone https://github.com/PierreRochard/coinbase-exchange-order-book.git")
+    stdin.flush()
+    if stderr:
+        print(stderr.read().splitlines())
+        stdin, stdout, stderr = ssh.exec_command("cd coinbase-exchange-order-book; git pull;")
+        stdin.flush()
+        data = stdout.read().splitlines()
+        for line in data:
+            print(line)
+        return False
+    data = stdout.read().splitlines()
+    for line in data:
+        print(line)
+    stdin, stdout, stderr = ssh.exec_command("sudo pip-3.4 install -r requirements.txt")
+    stdin.flush()
+    if stderr:
+        print(stderr.read().splitlines())
+        return False
     data = stdout.read().splitlines()
     for line in data:
         print(line)
@@ -71,3 +99,6 @@ for instance in [instance for instance in ec2.instances.all() if instance.state[
     sftp.put(local_config, remote_config)
     sftp.close()
     ssh.close()
+
+if __name__ == '__main__':
+    deploy()
