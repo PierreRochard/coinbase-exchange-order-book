@@ -85,12 +85,12 @@ class Spreads(object):
         # amount over the highest ask that you are willing to buy btc for
         self.bid_spread = 0.10
         # spread at which your bid is cancelled
-        self.bid_adjustment_spread = 0.15
+        self.bid_adjustment_spread = 0.18
 
         # amount below the lowest bid that you are willing to sell btc for
         self.ask_spread = 0.10
         # spread at which your ask is cancelled
-        self.ask_adjustment_spread = 0.15
+        self.ask_adjustment_spread = 0.18
 
 
 file_logger = logging.getLogger('file_log')
@@ -220,7 +220,7 @@ def websocket_to_order_book():
 
         if not open_orders.open_bid_order_id and not open_orders.insufficient_usd:
             if open_orders.insufficient_btc:
-                size = 0.05
+                size = 0.1
                 spread = 0.01
             else:
                 size = 0.01
@@ -240,7 +240,7 @@ def websocket_to_order_book():
             elif 'status' in response.json() and response.json()['status'] == 'rejected':
                 open_orders.open_bid_order_id = None
                 open_orders.open_bid_price = None
-                open_orders.open_bid_rejections += 0.02
+                open_orders.open_bid_rejections += 0.04
                 file_logger.warn('rejected: new bid @ {0}'.format(open_bid_price))
             elif 'message' in response.json() and response.json()['message'] == 'Insufficient funds':
                 open_orders.insufficient_usd = True
@@ -253,7 +253,7 @@ def websocket_to_order_book():
 
         if not open_orders.open_ask_order_id and not open_orders.insufficient_btc:
             if open_orders.insufficient_usd:
-                size = 0.05
+                size = 0.1
                 spread = 0.01
             else:
                 size = 0.01
@@ -273,7 +273,7 @@ def websocket_to_order_book():
             elif 'status' in response.json() and response.json()['status'] == 'rejected':
                 open_orders.open_ask_order_id = None
                 open_orders.open_ask_price = None
-                open_orders.open_ask_rejections += 0.02
+                open_orders.open_ask_rejections += 0.04
                 file_logger.warn('rejected: new ask @ {0}'.format(open_ask_price))
             elif 'message' in response.json() and response.json()['message'] == 'Insufficient funds':
                 open_orders.insufficient_btc = True
