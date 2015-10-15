@@ -83,14 +83,14 @@ class OpenOrders(object):
 class Spreads(object):
     def __init__(self):
         # amount over the highest ask that you are willing to buy btc for
-        self.bid_spread = 0.04
+        self.bid_spread = 0.10
         # spread at which your bid is cancelled
-        self.bid_adjustment_spread = 0.06
+        self.bid_adjustment_spread = 0.15
 
         # amount below the lowest bid that you are willing to sell btc for
-        self.ask_spread = 0.04
+        self.ask_spread = 0.10
         # spread at which your ask is cancelled
-        self.ask_adjustment_spread = 0.06
+        self.ask_adjustment_spread = 0.15
 
 
 file_logger = logging.getLogger('file_log')
@@ -240,7 +240,7 @@ def websocket_to_order_book():
             elif 'status' in response.json() and response.json()['status'] == 'rejected':
                 open_orders.open_bid_order_id = None
                 open_orders.open_bid_price = None
-                open_orders.open_bid_rejections += 0.01
+                open_orders.open_bid_rejections += 0.02
                 file_logger.warn('rejected: new bid @ {0}'.format(open_bid_price))
             elif 'message' in response.json() and response.json()['message'] == 'Insufficient funds':
                 open_orders.insufficient_usd = True
@@ -273,7 +273,7 @@ def websocket_to_order_book():
             elif 'status' in response.json() and response.json()['status'] == 'rejected':
                 open_orders.open_ask_order_id = None
                 open_orders.open_ask_price = None
-                open_orders.open_ask_rejections += 0.01
+                open_orders.open_ask_rejections += 0.02
                 file_logger.warn('rejected: new ask @ {0}'.format(open_ask_price))
             elif 'message' in response.json() and response.json()['message'] == 'Insufficient funds':
                 open_orders.insufficient_btc = True
@@ -294,6 +294,10 @@ def websocket_to_order_book():
                 file_logger.info('bid already canceled: {0} @ {1}'.format(open_orders.open_bid_order_id, open_orders.open_bid_price))
                 open_orders.open_bid_order_id = None
                 open_orders.open_bid_price = None
+            elif 'message' in response.json() and response.json()['message'] == 'Order already done':
+                file_logger.info('bid already filled: {0} @ {1}'.format(open_orders.open_ask_order_id, open_orders.open_ask_price))
+                open_orders.open_ask_order_id = None
+                open_orders.open_ask_price = None
             else:
                 file_logger.error('Unhandled response: {0}'.format((pformat(response.json()))))
                 raise Exception()
@@ -306,6 +310,10 @@ def websocket_to_order_book():
                 open_orders.open_ask_price = None
             elif 'message' in response.json() and response.json()['message'] == 'order not found':
                 file_logger.info('ask already canceled: {0} @ {1}'.format(open_orders.open_ask_order_id, open_orders.open_ask_price))
+                open_orders.open_ask_order_id = None
+                open_orders.open_ask_price = None
+            elif 'message' in response.json() and response.json()['message'] == 'Order already done':
+                file_logger.info('ask already filled: {0} @ {1}'.format(open_orders.open_ask_order_id, open_orders.open_ask_price))
                 open_orders.open_ask_order_id = None
                 open_orders.open_ask_price = None
             else:
