@@ -52,6 +52,31 @@ class OpenOrders(object):
         self.open_ask_rejections = 0.0
         self.open_bid_rejections = 0.0
 
+    def cancel(self, side):
+        if side == 'bid':
+            order_id = self.open_bid_order_id
+            price = self.open_bid_price
+            self.open_bid_order_id = None
+            self.open_bid_price = None
+        elif side == 'ask':
+            order_id = self.open_ask_order_id
+            price = self.open_ask_price
+            self.open_ask_order_id = None
+            self.open_ask_price = None
+        else:
+            return False
+        response = requests.delete(exchange_api_url + 'orders/' + str(order_id), auth=exchange_auth)
+        if response.status_code == 200:
+            file_logger.info('canceled {0} {1} @ {2}'.format(side, order_id, price))
+        elif 'message' in response.json() and response.json()['message'] == 'order not found':
+            file_logger.info('{0} already canceled: {1} @ {2}'.format(side, order_id, price))
+        elif 'message' in response.json() and response.json()['message'] == 'Order already done':
+            file_logger.info('{0} already filled: {1} @ {2}'.format(side, order_id, price))
+        else:
+            file_logger.error('Unhandled response: {0}'.format((pformat(response.json()))))
+            raise Exception()
+
+
     def get_open_orders(self):
         open_orders = requests.get(exchange_api_url + 'orders', auth=exchange_auth).json()
 
@@ -210,7 +235,8 @@ def websocket_to_order_book():
         min_ask = Decimal(order_book.asks.price_tree.min_key())
         if min_ask - max_bid < 0:
             order_book.negative_spread += 1
-            if order_book.negative_spread > 50:
+            print(order_book.negative_spread)
+            if order_book.negative_spread > 100:
                 file_logger.error('Negative spread: {0}'.format(min_ask - max_bid ))
                 return False
             continue
@@ -260,7 +286,7 @@ def websocket_to_order_book():
 
         if not open_orders.open_ask_order_id and not open_orders.insufficient_btc:
             if open_orders.insufficient_usd:
-                size = 0.1
+                size = 0.10
                 spread = 0.01
             else:
                 size = 0.01
@@ -292,40 +318,10 @@ def websocket_to_order_book():
                 raise Exception()
 
         if open_orders.open_bid_order_id and Decimal(open_orders.open_bid_price) < round(min_ask - Decimal(spreads.bid_adjustment_spread), 2):
-            response = requests.delete(exchange_api_url + 'orders/' + str(open_orders.open_bid_order_id), auth=exchange_auth)
-            if response.status_code == 200:
-                file_logger.info('canceled bid @ {0}'.format(open_orders.open_bid_price))
-                open_orders.open_bid_order_id = None
-                open_orders.open_bid_price = None
-            elif 'message' in response.json() and response.json()['message'] == 'order not found':
-                file_logger.info('bid already canceled: {0} @ {1}'.format(open_orders.open_bid_order_id, open_orders.open_bid_price))
-                open_orders.open_bid_order_id = None
-                open_orders.open_bid_price = None
-            elif 'message' in response.json() and response.json()['message'] == 'Order already done':
-                file_logger.info('bid already filled: {0} @ {1}'.format(open_orders.open_ask_order_id, open_orders.open_ask_price))
-                open_orders.open_ask_order_id = None
-                open_orders.open_ask_price = None
-            else:
-                file_logger.error('Unhandled response: {0}'.format((pformat(response.json()))))
-                raise Exception()
+            open_orders.cancel('bid')
 
         if open_orders.open_ask_order_id and Decimal(open_orders.open_ask_price) > round(max_bid + Decimal(spreads.ask_adjustment_spread), 2) :
-            response = requests.delete(exchange_api_url + 'orders/' + str(open_orders.open_ask_order_id), auth=exchange_auth)
-            if response.status_code == 200:
-                file_logger.info('canceled ask @ {0}'.format(open_orders.open_ask_price))
-                open_orders.open_ask_order_id = None
-                open_orders.open_ask_price = None
-            elif 'message' in response.json() and response.json()['message'] == 'order not found':
-                file_logger.info('ask already canceled: {0} @ {1}'.format(open_orders.open_ask_order_id, open_orders.open_ask_price))
-                open_orders.open_ask_order_id = None
-                open_orders.open_ask_price = None
-            elif 'message' in response.json() and response.json()['message'] == 'Order already done':
-                file_logger.info('ask already filled: {0} @ {1}'.format(open_orders.open_ask_order_id, open_orders.open_ask_price))
-                open_orders.open_ask_order_id = None
-                open_orders.open_ask_price = None
-            else:
-                file_logger.error('Unhandled response: {0}'.format((pformat(response.json()))))
-                raise Exception()
+            open_orders.cancel('ask')
 
 
 if __name__ == '__main__':
