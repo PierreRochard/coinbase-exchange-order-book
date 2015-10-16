@@ -72,7 +72,10 @@ pip-selfcheck.json
 # Temporary data
 .ipynb_checkpoints/
 
-config.py
+coinbase_config.py
+twitter_config.py
+aws_config.py
+
 orderbook/log.csv
 
 .idea/*
