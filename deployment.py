@@ -6,7 +6,7 @@ from dateutil.tz import tzlocal
 import paramiko
 from boto3.session import Session
 
-from config import AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, REGION, KEY_PAIR_NAME
+from aws_config import AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, REGION, KEY_PAIR_NAME
 
 session = Session(aws_access_key_id=AWS_ACCESS_KEY_ID,
                   aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
@@ -75,33 +75,45 @@ def deploy():
     stdin, stdout, stderr = ssh.exec_command("git clone https://github.com/PierreRochard/coinbase-exchange-order-book.git")
     stdin.flush()
     if stderr:
+        print('Error')
         print(stderr.read().splitlines())
         stdin, stdout, stderr = ssh.exec_command("cd coinbase-exchange-order-book; git pull;")
         stdin.flush()
+        if stderr:
+            print('Error')
+            print(stderr.read().splitlines())
         data = stdout.read().splitlines()
         for line in data:
             print(line)
-        return False
     data = stdout.read().splitlines()
     for line in data:
         print(line)
-    stdin, stdout, stderr = ssh.exec_command("sudo pip-3.4 install -r requirements.txt")
+    stdin, stdout, stderr = ssh.exec_command("sudo pip-3.4 install -r coinbase-exchange-order-book/requirements.txt")
     stdin.flush()
     if stderr:
+        print('Error')
         print(stderr.read().splitlines())
-        return False
     data = stdout.read().splitlines()
     for line in data:
         print(line)
     sftp = ssh.open_sftp()
-    local_config = os.path.abspath('config.py')
-    remote_config = '/home/ec2-user/coinbase-exchange-order-book/config.py'
+    local_config = os.path.abspath('coinbase_config.py')
+    remote_config = '/home/ec2-user/coinbase-exchange-order-book/coinbase_config.py'
     sftp.put(local_config, remote_config)
     sftp.close()
-    ssh.close()
+
     # sudo easy_install supervisor
     # sudo cp ceob_supervisor.conf /etc/supervisor.conf
     # supervisord -c /etc/supervisord.conf
     # supervisorctl status
+    stdin, stdout, stderr = ssh.exec_command("supervisorctl restart ceob")
+    stdin.flush()
+    if stderr:
+        print('Error')
+        print(stderr.read().splitlines())
+    data = stdout.read().splitlines()
+    for line in data:
+        print(line)
+    ssh.close()
 if __name__ == '__main__':
     deploy()
