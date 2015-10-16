@@ -6,7 +6,7 @@ import hmac
 import hashlib
 import base64
 from requests.auth import AuthBase
-from config import COINBASE_EXCHANGE_API_KEY, COINBASE_EXCHANGE_API_SECRET, COINBASE_EXCHANGE_API_PASSPHRASE
+from coinbase_config import COINBASE_EXCHANGE_API_KEY, COINBASE_EXCHANGE_API_SECRET, COINBASE_EXCHANGE_API_PASSPHRASE
 
 
 class CoinbaseExchangeAuthentication(AuthBase):
