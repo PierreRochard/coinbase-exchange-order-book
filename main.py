@@ -288,11 +288,10 @@ def websocket_to_order_book():
         if not open_orders.open_ask_order_id and not open_orders.insufficient_btc:
             if open_orders.insufficient_usd:
                 size = 0.10
-                spread = 0.01
+                open_ask_price = Decimal(round(min_ask + Decimal(open_orders.open_ask_rejections), 2))
             else:
                 size = 0.01
-                spread = spreads.ask_spread
-            open_ask_price = Decimal(round(max_bid + Decimal(spread) + Decimal(open_orders.open_ask_rejections), 2))
+                open_ask_price = Decimal(round(max_bid + Decimal(spreads.ask_spread) + Decimal(open_orders.open_ask_rejections), 2))
             order = {'size': size,
                      'price': str(open_ask_price),
                      'side': 'sell',
