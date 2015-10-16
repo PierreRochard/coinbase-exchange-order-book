@@ -8,6 +8,7 @@ from logging.handlers import RotatingFileHandler
 from pprint import pformat
 import random
 from socket import gaierror
+import sys
 import time
 
 from dateutil.parser import parse
@@ -17,6 +18,8 @@ import websockets
 
 from trading.exchange import exchange_api_url, exchange_auth
 from orderbook.tree import Tree
+
+command_line = False
 
 
 class Book(object):
@@ -51,8 +54,10 @@ class OpenOrders(object):
         self.open_bid_rejections = 0.0
 
     def cancel_all(self):
-        self.cancel('bid')
-        self.cancel('ask')
+        if self.open_bid_order_id:
+            self.cancel('bid')
+        if self.open_ask_order_id:
+            self.cancel('ask')
 
     def cancel(self, side):
         if side == 'bid':
@@ -124,12 +129,8 @@ file_handler = RotatingFileHandler('log.csv', 'a', 10 * 1024 * 1024, 100)
 file_handler.setFormatter(logging.Formatter('%(asctime)s, %(levelname)s, %(message)s'))
 file_handler.setLevel(logging.INFO)
 
-stream_handler = logging.StreamHandler()
-stream_handler.setFormatter(logging.Formatter('%(asctime)s, %(levelname)s, %(message)s\n'))
-stream_handler.setLevel(logging.INFO)
 
 file_logger = logging.getLogger('file_log')
-file_logger.addHandler(stream_handler)
 file_logger.addHandler(file_handler)
 file_logger.setLevel(logging.INFO)
 
@@ -242,14 +243,14 @@ def websocket_to_order_book():
         if min_ask - max_bid < 0:
             file_logger.warn('Negative spread: {0}'.format(min_ask - max_bid ))
             return False
-
-        print('Latency: {0:.6f} secs, '
-              'Min ask: {1:.2f}, Max bid: {2:.2f}, Spread: {3:.2f}, '
-              'Your ask: {4:.2f}, Your bid: {5:.2f}, Your spread: {6:.2f}'.format(
-            ((datetime.now(tzlocal()) - message_time).microseconds * 1e-6),
-            min_ask, max_bid, min_ask - max_bid,
-            open_orders.float_open_ask_price, open_orders.float_open_bid_price,
-        open_orders.float_open_ask_price - open_orders.float_open_bid_price), end='\r')
+        if command_line:
+            print('Latency: {0:.6f} secs, '
+                  'Min ask: {1:.2f}, Max bid: {2:.2f}, Spread: {3:.2f}, '
+                  'Your ask: {4:.2f}, Your bid: {5:.2f}, Your spread: {6:.2f}'.format(
+                ((datetime.now(tzlocal()) - message_time).microseconds * 1e-6),
+                min_ask, max_bid, min_ask - max_bid,
+                open_orders.float_open_ask_price, open_orders.float_open_bid_price,
+            open_orders.float_open_ask_price - open_orders.float_open_bid_price), end='\r')
 
         if not open_orders.open_bid_order_id and not open_orders.insufficient_usd:
             if open_orders.insufficient_btc:
@@ -325,6 +326,13 @@ def websocket_to_order_book():
 
 
 if __name__ == '__main__':
+    if len(sys.argv) == 1:
+        stream_handler = logging.StreamHandler()
+        stream_handler.setFormatter(logging.Formatter('%(asctime)s, %(levelname)s, %(message)s\n'))
+        stream_handler.setLevel(logging.INFO)
+        file_logger.addHandler(stream_handler)
+        command_line = True
+
     loop = asyncio.get_event_loop()
     n = 0
     while True:
