@@ -76,7 +76,7 @@ coinbase_config.py
 twitter_config.py
 aws_config.py
 
-orderbook/log.csv
+log.csv
 
 .idea/*
 keys/*

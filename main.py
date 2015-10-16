@@ -1,21 +1,21 @@
 import asyncio
 from datetime import datetime
 from collections import deque
-from dateutil.parser import parse
 from decimal import Decimal
 import json
 import logging
 from logging.handlers import RotatingFileHandler
 from pprint import pformat
-from dateutil.tz import tzlocal
-from orderbook.exchange import exchange_api_url, exchange_auth
 import random
 from socket import gaierror
 import time
 
+from dateutil.parser import parse
+from dateutil.tz import tzlocal
 import requests
 import websockets
 
+from trading.exchange import exchange_api_url, exchange_auth
 from orderbook.tree import Tree
 
 
