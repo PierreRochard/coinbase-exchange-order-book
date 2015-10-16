@@ -100,13 +100,17 @@ def deploy():
     local_config = os.path.abspath('coinbase_config.py')
     remote_config = '/home/ec2-user/coinbase-exchange-order-book/coinbase_config.py'
     sftp.put(local_config, remote_config)
+    local_config = os.path.abspath('twitter_config.py')
+    remote_config = '/home/ec2-user/coinbase-exchange-order-book/twitter_config.py'
+    sftp.put(local_config, remote_config)
     sftp.close()
 
     # sudo easy_install supervisor
-    # sudo cp ceob_supervisor.conf /etc/supervisor.conf
+    # sudo cp supervisor.conf /etc/supervisor.conf
     # supervisord -c /etc/supervisord.conf
-    # supervisorctl status
-    stdin, stdout, stderr = ssh.exec_command("supervisorctl restart ceob")
+    # supervisorctl reload
+
+    stdin, stdout, stderr = ssh.exec_command("supervisorctl reread; supervisorctl update; supervisorctl restart all")
     stdin.flush()
     if stderr:
         print('Error')
