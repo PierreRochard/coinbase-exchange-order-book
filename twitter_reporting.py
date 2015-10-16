@@ -75,4 +75,5 @@ def run():
     threading.Timer(60 * minutes, run).start()
 
 
-threading.Timer(1, run).start()
+if __name__ == '__main__':
+    threading.Timer(1, run).start()
