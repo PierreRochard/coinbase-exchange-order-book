@@ -50,6 +50,10 @@ class OpenOrders(object):
         self.open_ask_rejections = 0.0
         self.open_bid_rejections = 0.0
 
+    def cancel_all(self):
+        self.cancel('bid')
+        self.cancel('ask')
+
     def cancel(self, side):
         if side == 'bid':
             order_id = self.open_bid_order_id
@@ -135,6 +139,7 @@ def websocket_to_order_book():
 
     order_book = Book()
     open_orders = OpenOrders()
+    open_orders.cancel_all()
     spreads = Spreads()
 
     try:
