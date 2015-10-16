@@ -17,7 +17,7 @@ def deploy():
     # Amazon Linux AMI PV Instance Store 64-bit
     ami_id = 'ami-971066f2'
 
-    instance_type = 't2.micro'
+    instance_type = 'm1.small'
 
     prices = {'m1.small': 0.044}
 
@@ -40,7 +40,7 @@ def deploy():
                              MinCount=1,
                              MaxCount=1,
                              KeyName=KEY_PAIR_NAME,
-                             InstanceType='m1.small')
+                             InstanceType=instance_type)
 
     while not [instance for instance in ec2.instances.all() if instance.state['Name'] == 'running']:
         time.sleep(5)
@@ -99,6 +99,9 @@ def deploy():
     sftp.put(local_config, remote_config)
     sftp.close()
     ssh.close()
-
+    # sudo easy_install supervisor
+    # sudo cp ceob_supervisor.conf /etc/supervisor.conf
+    # supervisord -c /etc/supervisord.conf
+    # supervisorctl status
 if __name__ == '__main__':
     deploy()
