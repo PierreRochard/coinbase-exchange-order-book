@@ -234,9 +234,9 @@ def websocket_to_order_book():
 
         max_bid = Decimal(order_book.bids.price_tree.max_key())
         min_ask = Decimal(order_book.asks.price_tree.min_key())
-        if min_ask - max_bid < -0.10:
+        if min_ask - max_bid < 0:
             file_logger.warn('Negative spread: {0}'.format(min_ask - max_bid ))
-            continue
+            return False
 
         print('Latency: {0:.6f} secs, '
               'Min ask: {1:.2f}, Max bid: {2:.2f}, Spread: {3:.2f}, '
