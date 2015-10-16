@@ -27,12 +27,14 @@ def run():
                        and message['sender_screen_name'] == AUTHORIZED_USER]
     print(pformat(direct_messages))
     for message in direct_messages:
-        if message['text'] == 'restart':
-            call(["supervisorctl", "restart", "coinbase"])
-            result = subprocess.Popen("supervisorctl restart coinbase", shell=True,
-                                      stdout=subprocess.PIPE).stdout.read()
-            twitter.send_direct_message(screen_name=AUTHORIZED_USER,
-                                        text=result)
+        if message['text'] == 'restart' or message['text'] == 'r':
+            command = "supervisorctl restart coinbase"
+        else:
+            command = message['text']
+        result = subprocess.Popen(command, shell=True,
+                                  stdout=subprocess.PIPE).stdout.read()
+        twitter.send_direct_message(screen_name=AUTHORIZED_USER,
+                                    text=result)
     threading.Timer(60 * minutes, run).start()
 
 if __name__ == '__main__':
