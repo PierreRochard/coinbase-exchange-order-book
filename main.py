@@ -200,6 +200,7 @@ def manage_orders():
         else:
             file_logger.error('Unhandled response: {0}'.format(pformat(response.json())))
             raise Exception()
+        return True
 
     if not open_orders.open_ask_order_id and not open_orders.insufficient_btc:
         if open_orders.insufficient_usd:
@@ -234,14 +235,25 @@ def manage_orders():
         else:
             file_logger.error('Unhandled response: {0}'.format(pformat(response.json())))
             raise Exception()
+        return True
 
     if open_orders.open_bid_order_id and Decimal(open_orders.open_bid_price) < round(
                     min_ask - Decimal(spreads.bid_adjustment_spread), 2):
+        file_logger.info('CANCEL: open bid {0} threshold {1} diff {2}'.format(
+            Decimal(open_orders.open_bid_price),
+            round(min_ask - Decimal(spreads.bid_adjustment_spread), 2),
+            Decimal(open_orders.open_bid_price) - round(min_ask - Decimal(spreads.bid_adjustment_spread), 2)))
         open_orders.cancel('bid')
+        return True
 
     if open_orders.open_ask_order_id and Decimal(open_orders.open_ask_price) > round(
                     max_bid + Decimal(spreads.ask_adjustment_spread), 2):
+        file_logger.info('CANCEL: open ask {0} threshold {1} diff {2}'.format(
+            Decimal(open_orders.open_ask_price),
+            round(max_bid - Decimal(spreads.ask_adjustment_spread), 2),
+            Decimal(open_orders.open_ask_price) - round(max_bid + Decimal(spreads.ask_adjustment_spread), 2)))
         open_orders.cancel('ask')
+        return True
 
 
 if __name__ == '__main__':
