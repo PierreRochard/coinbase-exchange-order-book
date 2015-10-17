@@ -2,7 +2,12 @@ import asyncio
 from datetime import datetime
 from collections import deque
 from decimal import Decimal
-import json
+
+try:
+    import ujson as json
+except ImportError:
+    import json
+
 import logging
 from logging.handlers import RotatingFileHandler
 from pprint import pformat
@@ -31,11 +36,12 @@ class Book(object):
         self.level3_sequence = 0
         self.first_sequence = 0
         self.last_sequence = 0
+        self.last_time = datetime.now(tzlocal())
 
     def get_level3(self):
         level_3 = requests.get('http://api.exchange.coinbase.com/products/BTC-USD/book', params={'level': 3}).json()
-        [self.bids.insert(bid[2], Decimal(bid[1]), Decimal(bid[0])) for bid in level_3['bids']]
-        [self.asks.insert(ask[2], Decimal(ask[1]), Decimal(ask[0])) for ask in level_3['asks']]
+        [self.bids.insert_order(bid[2], Decimal(bid[1]), Decimal(bid[0]), initial=True) for bid in level_3['bids']]
+        [self.asks.insert_order(ask[2], Decimal(ask[1]), Decimal(ask[0]), initial=True) for ask in level_3['asks']]
         self.level3_sequence = level_3['sequence']
 
 
@@ -131,24 +137,23 @@ class Spreads(object):
     def bid_adjustment_spread(self):
         return Decimal(self.bid_spread) + Decimal(0.08)
 
+
 file_handler = RotatingFileHandler('log.csv', 'a', 10 * 1024 * 1024, 100)
 file_handler.setFormatter(logging.Formatter('%(asctime)s, %(levelname)s, %(message)s'))
 file_handler.setLevel(logging.INFO)
-
 
 file_logger = logging.getLogger('file_log')
 file_logger.addHandler(file_handler)
 file_logger.setLevel(logging.INFO)
 
+order_book = Book()
+open_orders = OpenOrders()
+open_orders.cancel_all()
+spreads = Spreads()
+
 
 @asyncio.coroutine
 def websocket_to_order_book():
-
-    order_book = Book()
-    open_orders = OpenOrders()
-    open_orders.cancel_all()
-    spreads = Spreads()
-
     try:
         websocket = yield from websockets.connect("wss://ws-feed.exchange.coinbase.com")
     except gaierror:
@@ -156,107 +161,131 @@ def websocket_to_order_book():
         return
     yield from websocket.send('{"type": "subscribe", "product_id": "BTC-USD"}')
 
+    messages = []
+    while True:
+        message = yield from websocket.recv()
+        messages += [message]
+        print(len(messages))
+        if len(messages) > 50:
+            break
+
     order_book.get_level3()
     open_orders.get_open_orders()
 
+    [process_message(message) for message in messages]
+
     while True:
         message = yield from websocket.recv()
-
-        if message is None:
-            file_logger.error('Websocket message is None.')
-            return False
-
-        try:
-            message = json.loads(message)
-        except TypeError:
-            file_logger.error('JSON did not load, see ' + str(message))
-            return False
-
-        new_sequence = int(message['sequence'])
-
-        if not order_book.first_sequence:
-            order_book.first_sequence = new_sequence
-            order_book.last_sequence = new_sequence
-            file_logger.info('Gap between level 3 and first message: {0}'
-                             .format(new_sequence - order_book.level3_sequence))
-        else:
-            if (new_sequence - order_book.last_sequence - 1) != 0:
-                file_logger.error('sequence gap: {0}'.format(new_sequence - order_book.last_sequence))
-                return False
-            order_book.last_sequence = new_sequence
-
-        message_type = message['type']
-
-        if message_type == 'received':
-            continue
-
-        message_time = parse(message['time'])
-
-        side = message['side']
-        if 'order_id' in message:
-            order_id = message['order_id']
-        if 'maker_order_id' in message:
-            maker_order_id = message['maker_order_id']
-        if 'price' in message:
-            price = Decimal(message['price'])
-        if 'remaining_size' in message:
-            remaining_size = Decimal(message['remaining_size'])
-        if 'size' in message:
-            size = Decimal(message['size'])
-        if 'new_size' in message:
-            new_size = Decimal(message['new_size'])
-
-        if message_type == 'open' and side == 'buy':
-            order_book.bids.insert(order_id, remaining_size, price)
-        elif message_type == 'open' and side == 'sell':
-            order_book.asks.insert(order_id, remaining_size, price)
-
-        elif message_type == 'match' and side == 'buy':
-            order_book.bids.match(maker_order_id, size)
-            order_book.matches.appendleft((message_time, side, size, price))
-        elif message_type == 'match' and side == 'sell':
-            order_book.asks.match(maker_order_id, size)
-            order_book.matches.appendleft((message_time, side, size, price))
-
-        elif message_type == 'done' and side == 'buy':
-            order_book.bids.remove_order(order_id)
-            if order_id == open_orders.open_bid_order_id:
-                if message['reason'] == 'filled':
-                    file_logger.info('bid filled @ {0}'.format(open_orders.open_bid_price))
-                open_orders.open_bid_order_id = None
-                open_orders.open_bid_price = None
-                open_orders.insufficient_btc = False
-        elif message_type == 'done' and side == 'sell':
-            order_book.asks.remove_order(order_id)
-            if order_id == open_orders.open_ask_order_id:
-                if message['reason'] == 'filled':
-                    file_logger.info('ask filled @ {0}'.format(open_orders.open_ask_price))
-                open_orders.open_ask_order_id = None
-                open_orders.open_ask_price = None
-                open_orders.insufficient_usd = False
-
-        elif message_type == 'change' and side == 'buy':
-            order_book.bids.change(order_id, new_size)
-        elif message_type == 'change' and side == 'sell':
-            order_book.asks.change(order_id, new_size)
-
-        else:
-            file_logger.error('Unhandled message: {0}'.format(pformat(message)))
+        if not process_message(message):
+            print(pformat(message))
             raise Exception()
+        manage_orders()
 
+
+def process_message(message):
+    if message is None:
+        file_logger.error('Websocket message is None.')
+        return False
+
+    try:
+        message = json.loads(message)
+    except TypeError:
+        file_logger.error('JSON did not load, see ' + str(message))
+        return False
+
+    new_sequence = int(message['sequence'])
+
+    if new_sequence <= order_book.level3_sequence:
+        return True
+
+    if not order_book.first_sequence:
+        order_book.first_sequence = new_sequence
+        order_book.last_sequence = new_sequence
+        file_logger.info('Gap between level 3 and first message: {0}'
+                         .format(new_sequence - order_book.level3_sequence))
+        assert new_sequence - order_book.level3_sequence == 1
+    else:
+        if (new_sequence - order_book.last_sequence - 1) != 0:
+            file_logger.error('sequence gap: {0}'.format(new_sequence - order_book.last_sequence))
+            return False
+        order_book.last_sequence = new_sequence
+
+    if 'order_type' in message and message['order_type'] == 'market':
+        return True
+
+    message_type = message['type']
+    message_time = parse(message['time'])
+    order_book.last_time = message_time
+    side = message['side']
+
+    if message_type == 'received' and side == 'buy':
+        order_book.bids.receive(message['order_id'], message['size'])
+        return True
+    elif message_type == 'received' and side == 'sell':
+        order_book.asks.receive(message['order_id'], message['size'])
+        return True
+
+    elif message_type == 'open' and side == 'buy':
+        order_book.bids.insert_order(message['order_id'], Decimal(message['remaining_size']), Decimal(message['price']))
+        return True
+    elif message_type == 'open' and side == 'sell':
+        order_book.asks.insert_order(message['order_id'], Decimal(message['remaining_size']), Decimal(message['price']))
+        return True
+
+    elif message_type == 'match' and side == 'buy':
+        order_book.bids.match(message['maker_order_id'], Decimal(message['size']))
+        order_book.matches.appendleft((message_time, side, Decimal(message['size']), Decimal(message['price'])))
+        return True
+    elif message_type == 'match' and side == 'sell':
+        order_book.asks.match(message['maker_order_id'], Decimal(message['size']))
+        order_book.matches.appendleft((message_time, side, Decimal(message['size']), Decimal(message['price'])))
+        return True
+
+    elif message_type == 'done' and side == 'buy':
+        order_book.bids.remove_order(message['order_id'])
+        if message['order_id'] == open_orders.open_bid_order_id:
+            if message['reason'] == 'filled':
+                file_logger.info('bid filled @ {0}'.format(open_orders.open_bid_price))
+            open_orders.open_bid_order_id = None
+            open_orders.open_bid_price = None
+            open_orders.insufficient_btc = False
+        return True
+    elif message_type == 'done' and side == 'sell':
+        order_book.asks.remove_order(message['order_id'])
+        if message['order_id'] == open_orders.open_ask_order_id:
+            if message['reason'] == 'filled':
+                file_logger.info('ask filled @ {0}'.format(open_orders.open_ask_price))
+            open_orders.open_ask_order_id = None
+            open_orders.open_ask_price = None
+            open_orders.insufficient_usd = False
+        return True
+
+    elif message_type == 'change' and side == 'buy':
+        order_book.bids.change(message['order_id'], Decimal(message['new_size']))
+        return True
+    elif message_type == 'change' and side == 'sell':
+        order_book.asks.change(message['order_id'], Decimal(message['new_size']))
+        return True
+
+    else:
+        file_logger.error('Unhandled message: {0}'.format(pformat(message)))
+        raise Exception()
+
+
+def manage_orders():
         max_bid = Decimal(order_book.bids.price_tree.max_key())
         min_ask = Decimal(order_book.asks.price_tree.min_key())
         if min_ask - max_bid < 0:
-            file_logger.warn('Negative spread: {0}'.format(min_ask - max_bid ))
-            return False
+            file_logger.warn('Negative spread: {0}'.format(min_ask - max_bid))
+            raise Exception()
         if command_line:
             print('Latency: {0:.6f} secs, '
                   'Min ask: {1:.2f}, Max bid: {2:.2f}, Spread: {3:.2f}, '
                   'Your ask: {4:.2f}, Your bid: {5:.2f}, Your spread: {6:.2f}'.format(
-                ((datetime.now(tzlocal()) - message_time).microseconds * 1e-6),
+                ((datetime.now(tzlocal()) - order_book.last_time).microseconds * 1e-6),
                 min_ask, max_bid, min_ask - max_bid,
                 open_orders.float_open_ask_price, open_orders.float_open_bid_price,
-            open_orders.float_open_ask_price - open_orders.float_open_bid_price), end='\r')
+                                  open_orders.float_open_ask_price - open_orders.float_open_bid_price), end='\r')
 
         if not open_orders.open_bid_order_id and not open_orders.insufficient_usd:
             if open_orders.insufficient_btc:
@@ -264,7 +293,7 @@ def websocket_to_order_book():
                 open_bid_price = Decimal(round(max_bid + Decimal(open_orders.open_bid_rejections), 2))
             else:
                 size = 0.01
-                spreads.bid_spread = Decimal(round((random.randrange(15)+6)/100, 2))
+                spreads.bid_spread = Decimal(round((random.randrange(15) + 6) / 100, 2))
                 open_bid_price = Decimal(round(min_ask - Decimal(spreads.bid_spread)
                                                - Decimal(open_orders.open_bid_rejections), 2))
             order = {'size': size,
@@ -298,7 +327,7 @@ def websocket_to_order_book():
                 open_ask_price = Decimal(round(min_ask + Decimal(open_orders.open_ask_rejections), 2))
             else:
                 size = 0.01
-                spreads.ask_spread = Decimal(round((random.randrange(15)+6)/100, 2))
+                spreads.ask_spread = Decimal(round((random.randrange(15) + 6) / 100, 2))
                 open_ask_price = Decimal(round(max_bid + Decimal(spreads.ask_spread)
                                                + Decimal(open_orders.open_ask_rejections), 2))
             order = {'size': size,
@@ -326,10 +355,12 @@ def websocket_to_order_book():
                 file_logger.error('Unhandled response: {0}'.format(pformat(response.json())))
                 raise Exception()
 
-        if open_orders.open_bid_order_id and Decimal(open_orders.open_bid_price) < round(min_ask - Decimal(spreads.bid_adjustment_spread), 2):
+        if open_orders.open_bid_order_id and Decimal(open_orders.open_bid_price) < round(
+                        min_ask - Decimal(spreads.bid_adjustment_spread), 2):
             open_orders.cancel('bid')
 
-        if open_orders.open_ask_order_id and Decimal(open_orders.open_ask_price) > round(max_bid + Decimal(spreads.ask_adjustment_spread), 2) :
+        if open_orders.open_ask_order_id and Decimal(open_orders.open_ask_price) > round(
+                        max_bid + Decimal(spreads.ask_adjustment_spread), 2):
             open_orders.cancel('ask')
 
 

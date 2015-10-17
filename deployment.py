@@ -46,6 +46,8 @@ def deploy():
         time.sleep(5)
 
     instance = instances[0]
+    print('ssh -i {0} ec2-user@{1}'.format(private_key_file, instance.public_ip_address))
+
     print(instance.id, instance.instance_type, instance.state,
           round((datetime.now(tzlocal()) - instance.launch_time).seconds / 60 / 60 * prices[instance.instance_type], 3),
           instance.public_dns_name, instance.public_ip_address)
@@ -61,7 +63,7 @@ def deploy():
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
     ssh.connect(instance.public_ip_address, username='ec2-user', key_filename=private_key_file)
-    stdin, stdout, stderr = ssh.exec_command("sudo yum -y install git python34 python34-pip gcc python34-devel;")
+    stdin, stdout, stderr = ssh.exec_command("sudo yum update -y; sudo yum -y install git python34 python34-pip gcc python34-devel;")
     if len(stderr.read().splitlines()) > 0:
         print(stderr.read().splitlines())
         print('ssh -i {0} ec2-user@{1}'.format(private_key_file, instance.public_ip_address))
@@ -119,5 +121,6 @@ def deploy():
     for line in data:
         print(line)
     ssh.close()
+
 if __name__ == '__main__':
     deploy()

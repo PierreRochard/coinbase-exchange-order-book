@@ -15,7 +15,7 @@ from twitter_config import APP_KEY, APP_SECRET, OAUTH_TOKEN, OAUTH_TOKEN_SECRET,
 
 twitter = Twython(APP_KEY, APP_SECRET, OAUTH_TOKEN, OAUTH_TOKEN_SECRET)
 
-minutes = 2
+minutes = 5
 
 
 def run():
@@ -25,7 +25,6 @@ def run():
     direct_messages = twitter.get_direct_messages()
     direct_messages = [message for message in direct_messages if parse(message['created_at']) > period_beg
                        and message['sender_screen_name'] == AUTHORIZED_USER]
-    print(pformat(direct_messages))
     for message in direct_messages:
         if message['text'] == 'restart' or message['text'] == 'r':
             command = "supervisorctl restart coinbase"
