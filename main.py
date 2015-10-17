@@ -58,8 +58,10 @@ def websocket_to_order_book():
         message = yield from websocket.recv()
         if not process_message(message):
             print(pformat(message))
-            raise Exception()
-        manage_orders()
+            return False
+        if not manage_orders():
+            print(pformat(message))
+            return False
 
 
 def process_message(message):
@@ -149,7 +151,7 @@ def process_message(message):
 
     else:
         file_logger.error('Unhandled message: {0}'.format(pformat(message)))
-        raise Exception()
+        return False
 
 
 def manage_orders():
@@ -157,7 +159,7 @@ def manage_orders():
     min_ask = Decimal(order_book.asks.price_tree.min_key())
     if min_ask - max_bid < 0:
         file_logger.warn('Negative spread: {0}'.format(min_ask - max_bid))
-        raise Exception()
+        return False
     if command_line:
         print('Latency: {0:.6f} secs, '
               'Min ask: {1:.2f}, Max bid: {2:.2f}, Spread: {3:.2f}, '
@@ -199,7 +201,7 @@ def manage_orders():
             file_logger.warn('Insufficient USD')
         else:
             file_logger.error('Unhandled response: {0}'.format(pformat(response.json())))
-            raise Exception()
+            return False
         return True
 
     if not open_orders.open_ask_order_id and not open_orders.insufficient_btc:
@@ -234,7 +236,7 @@ def manage_orders():
             file_logger.warn('Insufficient BTC')
         else:
             file_logger.error('Unhandled response: {0}'.format(pformat(response.json())))
-            raise Exception()
+            return False
         return True
 
     if open_orders.open_bid_order_id and Decimal(open_orders.open_bid_price) < round(
@@ -254,7 +256,7 @@ def manage_orders():
             Decimal(open_orders.open_ask_price) - round(max_bid + Decimal(spreads.ask_adjustment_spread), 2)))
         open_orders.cancel('ask')
         return True
-
+    return True
 
 if __name__ == '__main__':
     if len(sys.argv) == 1:

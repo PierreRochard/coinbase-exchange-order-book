@@ -112,7 +112,7 @@ def deploy():
     # supervisord -c /etc/supervisord.conf
     # supervisorctl reload
 
-    stdin, stdout, stderr = ssh.exec_command("supervisorctl reread; supervisorctl update; supervisorctl restart all; supervisorctl status")
+    stdin, stdout, stderr = ssh.exec_command("supervisorctl status; supervisorctl reread; supervisorctl update; supervisorctl restart all; supervisorctl status")
     stdin.flush()
     if stderr:
         print('Error')
