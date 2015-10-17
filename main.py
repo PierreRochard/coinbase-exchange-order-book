@@ -117,13 +117,19 @@ class Spreads(object):
     def __init__(self):
         # amount over the highest ask that you are willing to buy btc for
         self.bid_spread = 0.10
-        # spread at which your bid is cancelled
-        self.bid_adjustment_spread = 0.18
 
         # amount below the lowest bid that you are willing to sell btc for
         self.ask_spread = 0.10
-        # spread at which your ask is cancelled
-        self.ask_adjustment_spread = 0.18
+
+    # spread at which your ask is cancelled
+    @property
+    def ask_adjustment_spread(self):
+        return Decimal(self.ask_spread) + Decimal(0.08)
+
+    # spread at which your bid is cancelled
+    @property
+    def bid_adjustment_spread(self):
+        return Decimal(self.bid_spread) + Decimal(0.08)
 
 file_handler = RotatingFileHandler('log.csv', 'a', 10 * 1024 * 1024, 100)
 file_handler.setFormatter(logging.Formatter('%(asctime)s, %(levelname)s, %(message)s'))
@@ -255,11 +261,12 @@ def websocket_to_order_book():
         if not open_orders.open_bid_order_id and not open_orders.insufficient_usd:
             if open_orders.insufficient_btc:
                 size = 0.1
-                spread = 0.01
+                open_bid_price = Decimal(round(max_bid + Decimal(open_orders.open_bid_rejections), 2))
             else:
                 size = 0.01
-                spread = spreads.bid_spread
-            open_bid_price = Decimal(round(min_ask - Decimal(spread) - Decimal(open_orders.open_bid_rejections), 2))
+                spreads.bid_spread = Decimal(round((random.randrange(15)+6)/100, 2))
+                open_bid_price = Decimal(round(min_ask - Decimal(spreads.bid_spread)
+                                               - Decimal(open_orders.open_bid_rejections), 2))
             order = {'size': size,
                      'price': str(open_bid_price),
                      'side': 'buy',
@@ -291,7 +298,9 @@ def websocket_to_order_book():
                 open_ask_price = Decimal(round(min_ask + Decimal(open_orders.open_ask_rejections), 2))
             else:
                 size = 0.01
-                open_ask_price = Decimal(round(max_bid + Decimal(spreads.ask_spread) + Decimal(open_orders.open_ask_rejections), 2))
+                spreads.ask_spread = Decimal(round((random.randrange(15)+6)/100, 2))
+                open_ask_price = Decimal(round(max_bid + Decimal(spreads.ask_spread)
+                                               + Decimal(open_orders.open_ask_rejections), 2))
             order = {'size': size,
                      'price': str(open_ask_price),
                      'side': 'sell',
