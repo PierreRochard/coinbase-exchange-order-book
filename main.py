@@ -35,18 +35,20 @@ spreads = Spreads()
 
 @asyncio.coroutine
 def websocket_to_order_book():
+
     try:
-        websocket = yield from websockets.connect("wss://ws-feed.exchange.coinbase.com")
+        coinbase_websocket = yield from websockets.connect("wss://ws-feed.exchange.coinbase.com")
     except gaierror:
         file_logger.error('socket.gaierror - had a problem connecting to Coinbase feed')
         return
-    yield from websocket.send('{"type": "subscribe", "product_id": "BTC-USD"}')
+
+    yield from coinbase_websocket.send('{"type": "subscribe", "product_id": "BTC-USD"}')
 
     messages = []
     while True:
-        message = yield from websocket.recv()
+        message = yield from coinbase_websocket.recv()
         messages += [message]
-        if len(messages) > 50:
+        if len(messages) > 20:
             break
 
     order_book.get_level3()
@@ -55,13 +57,19 @@ def websocket_to_order_book():
     [process_message(message) for message in messages]
 
     while True:
-        message = yield from websocket.recv()
+        message = yield from coinbase_websocket.recv()
         if not process_message(message):
             print(pformat(message))
             return False
-        if not manage_orders():
-            print(pformat(message))
-            return False
+        max_bid = Decimal(order_book.bids.price_tree.max_key())
+        min_ask = Decimal(order_book.asks.price_tree.min_key())
+        print('Latency: {0:.6f} secs, '
+              'Min ask: {1:.2f}, Max bid: {2:.2f}, Spread: {3:.2f}'.format(
+            ((datetime.now(tzlocal()) - order_book.last_time).microseconds * 1e-6),
+            min_ask, max_bid, min_ask - max_bid), end='\r')
+        # if not manage_orders():
+        #     print(pformat(message))
+        #     return False
 
 
 def process_message(message):
@@ -83,11 +91,9 @@ def process_message(message):
     if not order_book.first_sequence:
         order_book.first_sequence = new_sequence
         order_book.last_sequence = new_sequence
-        file_logger.info('Gap between level 3 and first message: {0}'
-                         .format(new_sequence - order_book.level3_sequence))
         assert new_sequence - order_book.level3_sequence == 1
     else:
-        if (new_sequence - order_book.last_sequence - 1) != 0:
+        if (new_sequence - order_book.last_sequence) != 1:
             file_logger.error('sequence gap: {0}'.format(new_sequence - order_book.last_sequence))
             return False
         order_book.last_sequence = new_sequence
@@ -152,6 +158,7 @@ def process_message(message):
     else:
         file_logger.error('Unhandled message: {0}'.format(pformat(message)))
         return False
+
 
 
 def manage_orders():
