@@ -8,7 +8,7 @@ import requests
 import websockets
 
 
-minutes = 1
+minutes = 30
 begin = datetime.now(tzlocal())
 end = begin + timedelta(minutes=minutes)
 
@@ -48,7 +48,7 @@ if __name__ == '__main__':
     first_sequence = beginning_level_3['sequence']
     last_sequence = ending_level_3['sequence']
 
-    messages = [message for message in messages if first_sequence < message['sequence'] < last_sequence]
+    messages = [message for message in messages if first_sequence < message['sequence'] <= last_sequence]
     messages = sorted(messages, key=lambda k: k['sequence'])
     for message in messages:
         assert message['sequence'] == first_sequence + 1
