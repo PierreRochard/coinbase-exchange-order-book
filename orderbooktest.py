@@ -7,40 +7,29 @@ except ImportError:
 from orderbook.book import Book
 
 
-def dict_compare(new_dictionary, old_dictionary, price_map=False, order_map=False):
-    d1_keys = set(new_dictionary.keys())
-    d2_keys = set(old_dictionary.keys())
+def dict_compare(variable_order_book, control_order_book, price_map=False, order_map=False):
+    d1_keys = set(variable_order_book.keys())
+    d2_keys = set(control_order_book.keys())
+
     intersect_keys = d1_keys.intersection(d2_keys)
+    assert intersect_keys
     added = d1_keys - d2_keys
+    assert not added
     removed = d2_keys - d1_keys
-    modified = []
-    # for key in intersect_keys:
-    #     if price_map:
-    #         try:
-                # print(len(new_dictionary[key]))
-                # print(len(old_dictionary[key]))
-                # assert len(new_dictionary[key]) == len(old_dictionary[key])
-                # assert len(new_dictionary[key]) == old_dictionary[key]
+    assert not removed
 
-                # assert new_dictionary[key].length == old_dictionary[key].length
-                # assert new_dictionary[key].volume == old_dictionary[key].volume
-                #
-                # assert new_dictionary[key].head_order.order_id == old_dictionary[key].head_order.order_id
-                # assert new_dictionary[key].head_order.size == old_dictionary[key].head_order.size
-                # assert new_dictionary[key].head_order.price == old_dictionary[key].head_order.price
-                #
-                # assert new_dictionary[key].tail_order.order_id == old_dictionary[key].tail_order.order_id
-                # assert new_dictionary[key].tail_order.size == old_dictionary[key].tail_order.size
-                # assert new_dictionary[key].tail_order.price == old_dictionary[key].tail_order.price
-
-            # except AssertionError:
-            #     pass
-                # raise Exception()
-                # modified += (new_dictionary[key], old_dictionary[key])
-    modified = {o: (new_dictionary[o], old_dictionary[o]) for o in intersect_keys if new_dictionary[o] != old_dictionary[o]}
-
-    same = set(o for o in intersect_keys if new_dictionary[o] == old_dictionary[o])
-    return added, removed, modified, same
+    for key in intersect_keys:
+        if price_map:
+            assert len(variable_order_book[key]) == len(control_order_book[key])
+            zipped = zip(variable_order_book[key], control_order_book[key])
+            for order in zipped:
+                assert order[0]['order_id'] == order[1]['order_id']
+                assert order[0]['price'] == order[1]['price']
+                assert order[0]['size'] == order[1]['size']
+        if order_map:
+            assert variable_order_book[key]['order_id'] == control_order_book[key]['order_id']
+            assert variable_order_book[key]['price'] == control_order_book[key]['price']
+            assert variable_order_book[key]['size'] == control_order_book[key]['size']
 
 
 def test_orderbook():
@@ -71,17 +60,9 @@ def test_orderbook():
 
     control_order_book.get_level3(ending_level_3)
 
-    # assert variable_order_book.asks.price_map == control_order_book.asks.price_map
+    dict_compare(variable_order_book.asks.price_map, control_order_book.asks.price_map, price_map=True)
+    dict_compare(variable_order_book.asks.order_map, control_order_book.asks.order_map, order_map=True)
 
-    added, removed, modified, same = dict_compare(variable_order_book.asks.price_map, control_order_book.asks.price_map,
-                                                  price_map=True)
-    if added:
-        print('superfluous entries: {0}'.format(added))
-    if removed:
-        print('missing entries: {0}'.format(removed))
-    # if modified:
-    #     print('modified entries: {0}'.format(modified))
-    #
 
 if __name__ == '__main__':
     test_orderbook()
