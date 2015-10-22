@@ -10,9 +10,11 @@ class OpenOrders(object):
     def __init__(self):
         self.open_bid_order_id = None
         self.open_bid_price = None
+        self.open_bid_status = None
 
         self.open_ask_order_id = None
         self.open_ask_price = None
+        self.open_ask_status = None
 
         self.insufficient_btc = False
         self.insufficient_usd = False
@@ -30,13 +32,9 @@ class OpenOrders(object):
         if side == 'bid':
             order_id = self.open_bid_order_id
             price = self.open_bid_price
-            self.open_bid_order_id = None
-            self.open_bid_price = None
         elif side == 'ask':
             order_id = self.open_ask_order_id
             price = self.open_ask_price
-            self.open_ask_order_id = None
-            self.open_ask_price = None
         else:
             return False
         response = requests.delete(exchange_api_url + 'orders/' + str(order_id), auth=exchange_auth)
