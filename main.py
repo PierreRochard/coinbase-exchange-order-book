@@ -1,7 +1,9 @@
 import asyncio
 from datetime import datetime
 from decimal import Decimal
+import functools
 from trading import file_logger
+from concurrent.futures import ThreadPoolExecutor
 
 try:
     import ujson as json
@@ -71,118 +73,117 @@ def websocket_to_order_book():
             return False
         max_bid = Decimal(order_book.bids.price_tree.max_key())
         min_ask = Decimal(order_book.asks.price_tree.min_key())
-        print('Latency: {0:.6f} secs, '
-              'Min ask: {1:.2f}, Max bid: {2:.2f}, Spread: {3:.2f}'.format(
-            ((datetime.now(tzlocal()) - order_book.last_time).microseconds * 1e-6),
-            min_ask, max_bid, min_ask - max_bid), end='\r')
-        # if not manage_orders():
-        #     print(pformat(message))
-        #     return False
+        # print('Latency: {0:.6f} secs, '
+        #       'Min ask: {1:.2f}, Max bid: {2:.2f}, Spread: {3:.2f}'.format(
+        #     ((datetime.now(tzlocal()) - order_book.last_time).microseconds * 1e-6),
+        #     min_ask, max_bid, min_ask - max_bid), end='\r')
+        #
 
 
 def manage_orders():
-    max_bid = Decimal(order_book.bids.price_tree.max_key())
-    min_ask = Decimal(order_book.asks.price_tree.min_key())
-    if min_ask - max_bid < 0:
-        file_logger.warn('Negative spread: {0}'.format(min_ask - max_bid))
-        return False
-    if command_line:
-        print('Latency: {0:.6f} secs, '
-              'Min ask: {1:.2f}, Max bid: {2:.2f}, Spread: {3:.2f}, '
-              'Your ask: {4:.2f}, Your bid: {5:.2f}, Your spread: {6:.2f}'.format(
-            ((datetime.now(tzlocal()) - order_book.last_time).microseconds * 1e-6),
-            min_ask, max_bid, min_ask - max_bid,
-            open_orders.float_open_ask_price, open_orders.float_open_bid_price,
-                              open_orders.float_open_ask_price - open_orders.float_open_bid_price), end='\r')
+    while True:
+        time.sleep(0.005)
+        try:
+            if order_book.asks.price_tree.min_key() - order_book.bids.price_tree.max_key() < 0:
+                file_logger.warn('Negative spread: {0}'.format(order_book.asks.price_tree.min_key() - order_book.bids.price_tree.max_key()))
+                continue
+            if command_line:
+                print('Last message: {0:.6f} secs, '
+                      'Min ask: {1:.2f}, Max bid: {2:.2f}, Spread: {3:.2f}, '
+                      'Your ask: {4:.2f}, Your bid: {5:.2f}, Your spread: {6:.2f}'.format(
+                    ((datetime.now(tzlocal()) - order_book.last_time).microseconds * 1e-6),
+                    order_book.asks.price_tree.min_key(), order_book.bids.price_tree.max_key(), order_book.asks.price_tree.min_key() - order_book.bids.price_tree.max_key(),
+                    open_orders.float_open_ask_price, open_orders.float_open_bid_price,
+                                      open_orders.float_open_ask_price - open_orders.float_open_bid_price), end='\r')
+        except ValueError:
+            continue
 
-    if not open_orders.open_bid_order_id and not open_orders.insufficient_usd:
-        if open_orders.insufficient_btc:
-            size = 0.1
-            open_bid_price = Decimal(round(max_bid + Decimal(open_orders.open_bid_rejections), 2))
-        else:
-            size = 0.01
-            spreads.bid_spread = Decimal(round((random.randrange(15) + 6) / 100, 2))
-            open_bid_price = Decimal(round(min_ask - Decimal(spreads.bid_spread)
-                                           - Decimal(open_orders.open_bid_rejections), 2))
-        order = {'size': size,
-                 'price': str(open_bid_price),
-                 'side': 'buy',
-                 'product_id': 'BTC-USD',
-                 'post_only': True}
-        response = requests.post(exchange_api_url + 'orders', json=order, auth=exchange_auth)
-        if 'status' in response.json() and response.json()['status'] == 'pending':
-            open_orders.open_bid_order_id = response.json()['id']
-            open_orders.open_bid_price = open_bid_price
-            open_orders.open_bid_rejections = 0.0
-            file_logger.info('new bid @ {0}'.format(open_bid_price))
-        elif 'status' in response.json() and response.json()['status'] == 'rejected':
-            open_orders.open_bid_order_id = None
-            open_orders.open_bid_price = None
-            open_orders.open_bid_rejections += 0.04
-            file_logger.warn('rejected: new bid @ {0}'.format(open_bid_price))
-        elif 'message' in response.json() and response.json()['message'] == 'Insufficient funds':
-            open_orders.insufficient_usd = True
-            open_orders.open_bid_order_id = None
-            open_orders.open_bid_price = None
-            file_logger.warn('Insufficient USD')
-        else:
-            file_logger.error('Unhandled response: {0}'.format(pformat(response.json())))
-            return False
-        return True
+        if not open_orders.open_bid_order_id and not open_orders.insufficient_usd:
+            if open_orders.insufficient_btc:
+                size = 0.1
+                open_bid_price = Decimal(round(order_book.bids.price_tree.max_key() + Decimal(open_orders.open_bid_rejections), 2))
+            else:
+                size = 0.01
+                spreads.bid_spread = Decimal(round((random.randrange(15) + 6) / 100, 2))
+                open_bid_price = Decimal(round(order_book.asks.price_tree.min_key() - Decimal(spreads.bid_spread)
+                                               - Decimal(open_orders.open_bid_rejections), 2))
+            order = {'size': size,
+                     'price': str(open_bid_price),
+                     'side': 'buy',
+                     'product_id': 'BTC-USD',
+                     'post_only': True}
+            response = requests.post(exchange_api_url + 'orders', json=order, auth=exchange_auth)
+            if 'status' in response.json() and response.json()['status'] == 'pending':
+                open_orders.open_bid_order_id = response.json()['id']
+                open_orders.open_bid_price = open_bid_price
+                open_orders.open_bid_rejections = 0.0
+                file_logger.info('new bid @ {0}'.format(open_bid_price))
+            elif 'status' in response.json() and response.json()['status'] == 'rejected':
+                open_orders.open_bid_order_id = None
+                open_orders.open_bid_price = None
+                open_orders.open_bid_rejections += 0.04
+                file_logger.warn('rejected: new bid @ {0}'.format(open_bid_price))
+            elif 'message' in response.json() and response.json()['message'] == 'Insufficient funds':
+                open_orders.insufficient_usd = True
+                open_orders.open_bid_order_id = None
+                open_orders.open_bid_price = None
+                file_logger.warn('Insufficient USD')
+            else:
+                file_logger.error('Unhandled response: {0}'.format(pformat(response.json())))
+            continue
 
-    if not open_orders.open_ask_order_id and not open_orders.insufficient_btc:
-        if open_orders.insufficient_usd:
-            size = 0.10
-            open_ask_price = Decimal(round(min_ask + Decimal(open_orders.open_ask_rejections), 2))
-        else:
-            size = 0.01
-            spreads.ask_spread = Decimal(round((random.randrange(15) + 6) / 100, 2))
-            open_ask_price = Decimal(round(max_bid + Decimal(spreads.ask_spread)
-                                           + Decimal(open_orders.open_ask_rejections), 2))
-        order = {'size': size,
-                 'price': str(open_ask_price),
-                 'side': 'sell',
-                 'product_id': 'BTC-USD',
-                 'post_only': True}
-        response = requests.post(exchange_api_url + 'orders', json=order, auth=exchange_auth)
-        if 'status' in response.json() and response.json()['status'] == 'pending':
-            open_orders.open_ask_order_id = response.json()['id']
-            open_orders.open_ask_price = open_ask_price
-            file_logger.info('new ask @ {0}'.format(open_ask_price))
-            open_orders.open_ask_rejections = 0
-        elif 'status' in response.json() and response.json()['status'] == 'rejected':
-            open_orders.open_ask_order_id = None
-            open_orders.open_ask_price = None
-            open_orders.open_ask_rejections += 0.04
-            file_logger.warn('rejected: new ask @ {0}'.format(open_ask_price))
-        elif 'message' in response.json() and response.json()['message'] == 'Insufficient funds':
-            open_orders.insufficient_btc = True
-            open_orders.open_ask_order_id = None
-            open_orders.open_ask_price = None
-            file_logger.warn('Insufficient BTC')
-        else:
-            file_logger.error('Unhandled response: {0}'.format(pformat(response.json())))
-            return False
-        return True
+        if not open_orders.open_ask_order_id and not open_orders.insufficient_btc:
+            if open_orders.insufficient_usd:
+                size = 0.10
+                open_ask_price = Decimal(round(order_book.asks.price_tree.min_key() + Decimal(open_orders.open_ask_rejections), 2))
+            else:
+                size = 0.01
+                spreads.ask_spread = Decimal(round((random.randrange(15) + 6) / 100, 2))
+                open_ask_price = Decimal(round(order_book.bids.price_tree.max_key() + Decimal(spreads.ask_spread)
+                                               + Decimal(open_orders.open_ask_rejections), 2))
+            order = {'size': size,
+                     'price': str(open_ask_price),
+                     'side': 'sell',
+                     'product_id': 'BTC-USD',
+                     'post_only': True}
+            response = requests.post(exchange_api_url + 'orders', json=order, auth=exchange_auth)
+            if 'status' in response.json() and response.json()['status'] == 'pending':
+                open_orders.open_ask_order_id = response.json()['id']
+                open_orders.open_ask_price = open_ask_price
+                file_logger.info('new ask @ {0}'.format(open_ask_price))
+                open_orders.open_ask_rejections = 0
+            elif 'status' in response.json() and response.json()['status'] == 'rejected':
+                open_orders.open_ask_order_id = None
+                open_orders.open_ask_price = None
+                open_orders.open_ask_rejections += 0.04
+                file_logger.warn('rejected: new ask @ {0}'.format(open_ask_price))
+            elif 'message' in response.json() and response.json()['message'] == 'Insufficient funds':
+                open_orders.insufficient_btc = True
+                open_orders.open_ask_order_id = None
+                open_orders.open_ask_price = None
+                file_logger.warn('Insufficient BTC')
+            else:
+                file_logger.error('Unhandled response: {0}'.format(pformat(response.json())))
+            continue
 
-    if open_orders.open_bid_order_id and Decimal(open_orders.open_bid_price) < round(
-                    min_ask - Decimal(spreads.bid_adjustment_spread), 2):
-        file_logger.info('CANCEL: open bid {0} threshold {1} diff {2}'.format(
-            Decimal(open_orders.open_bid_price),
-            round(min_ask - Decimal(spreads.bid_adjustment_spread), 2),
-            Decimal(open_orders.open_bid_price) - round(min_ask - Decimal(spreads.bid_adjustment_spread), 2)))
-        open_orders.cancel('bid')
-        return True
+        if open_orders.open_bid_order_id and Decimal(open_orders.open_bid_price) < round(
+                        order_book.asks.price_tree.min_key() - Decimal(spreads.bid_adjustment_spread), 2):
+            file_logger.info('CANCEL: open bid {0} threshold {1} diff {2}'.format(
+                Decimal(open_orders.open_bid_price),
+                round(order_book.asks.price_tree.min_key() - Decimal(spreads.bid_adjustment_spread), 2),
+                Decimal(open_orders.open_bid_price) - round(order_book.asks.price_tree.min_key() - Decimal(spreads.bid_adjustment_spread), 2)))
+            open_orders.cancel('bid')
+            continue
 
-    if open_orders.open_ask_order_id and Decimal(open_orders.open_ask_price) > round(
-                    max_bid + Decimal(spreads.ask_adjustment_spread), 2):
-        file_logger.info('CANCEL: open ask {0} threshold {1} diff {2}'.format(
-            Decimal(open_orders.open_ask_price),
-            round(max_bid - Decimal(spreads.ask_adjustment_spread), 2),
-            Decimal(open_orders.open_ask_price) - round(max_bid + Decimal(spreads.ask_adjustment_spread), 2)))
-        open_orders.cancel('ask')
-        return True
-    return True
+        if open_orders.open_ask_order_id and Decimal(open_orders.open_ask_price) > round(
+                        order_book.bids.price_tree.max_key() + Decimal(spreads.ask_adjustment_spread), 2):
+            file_logger.info('CANCEL: open ask {0} threshold {1} diff {2}'.format(
+                Decimal(open_orders.open_ask_price),
+                round(order_book.bids.price_tree.max_key() - Decimal(spreads.ask_adjustment_spread), 2),
+                Decimal(open_orders.open_ask_price) - round(order_book.bids.price_tree.max_key() + Decimal(spreads.ask_adjustment_spread), 2)))
+            open_orders.cancel('ask')
+            continue
+
 
 if __name__ == '__main__':
     if len(sys.argv) == 1:
@@ -191,8 +192,9 @@ if __name__ == '__main__':
         stream_handler.setLevel(logging.INFO)
         file_logger.addHandler(stream_handler)
         command_line = True
-
     loop = asyncio.get_event_loop()
+    executor = ThreadPoolExecutor(2)
+    loop.run_in_executor(executor, manage_orders)
     n = 0
     while True:
         start_time = loop.time()
