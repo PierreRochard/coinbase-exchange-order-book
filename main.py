@@ -15,7 +15,6 @@ from socket import gaierror
 import sys
 import time
 
-from dateutil.parser import parse
 from dateutil.tz import tzlocal
 import requests
 import websockets
@@ -47,6 +46,7 @@ def websocket_to_order_book():
     messages = []
     while True:
         message = yield from coinbase_websocket.recv()
+        message = json.loads(message)
         messages += [message]
         if len(messages) > 20:
             break
@@ -54,11 +54,19 @@ def websocket_to_order_book():
     order_book.get_level3()
     open_orders.get_open_orders()
 
-    [process_message(message) for message in messages]
+    [order_book.process_message(message) for message in messages if message['sequence'] > order_book.level3_sequence]
 
     while True:
         message = yield from coinbase_websocket.recv()
-        if not process_message(message):
+        if message is None:
+            file_logger.error('Websocket message is None.')
+            return False
+        try:
+            message = json.loads(message)
+        except TypeError:
+            file_logger.error('JSON did not load, see ' + str(message))
+            return False
+        if not order_book.process_message(message):
             print(pformat(message))
             return False
         max_bid = Decimal(order_book.bids.price_tree.max_key())
@@ -70,95 +78,6 @@ def websocket_to_order_book():
         # if not manage_orders():
         #     print(pformat(message))
         #     return False
-
-
-def process_message(message):
-    if message is None:
-        file_logger.error('Websocket message is None.')
-        return False
-
-    try:
-        message = json.loads(message)
-    except TypeError:
-        file_logger.error('JSON did not load, see ' + str(message))
-        return False
-
-    new_sequence = int(message['sequence'])
-
-    if new_sequence <= order_book.level3_sequence:
-        return True
-
-    if not order_book.first_sequence:
-        order_book.first_sequence = new_sequence
-        order_book.last_sequence = new_sequence
-        assert new_sequence - order_book.level3_sequence == 1
-    else:
-        if (new_sequence - order_book.last_sequence) != 1:
-            file_logger.error('sequence gap: {0}'.format(new_sequence - order_book.last_sequence))
-            return False
-        order_book.last_sequence = new_sequence
-
-    if 'order_type' in message and message['order_type'] == 'market':
-        return True
-
-    message_type = message['type']
-    message_time = parse(message['time'])
-    order_book.last_time = message_time
-    side = message['side']
-
-    if message_type == 'received' and side == 'buy':
-        order_book.bids.receive(message['order_id'], message['size'])
-        return True
-    elif message_type == 'received' and side == 'sell':
-        order_book.asks.receive(message['order_id'], message['size'])
-        return True
-
-    elif message_type == 'open' and side == 'buy':
-        order_book.bids.insert_order(message['order_id'], Decimal(message['remaining_size']), Decimal(message['price']))
-        return True
-    elif message_type == 'open' and side == 'sell':
-        order_book.asks.insert_order(message['order_id'], Decimal(message['remaining_size']), Decimal(message['price']))
-        return True
-
-    elif message_type == 'match' and side == 'buy':
-        order_book.bids.match(message['maker_order_id'], Decimal(message['size']))
-        order_book.matches.appendleft((message_time, side, Decimal(message['size']), Decimal(message['price'])))
-        return True
-    elif message_type == 'match' and side == 'sell':
-        order_book.asks.match(message['maker_order_id'], Decimal(message['size']))
-        order_book.matches.appendleft((message_time, side, Decimal(message['size']), Decimal(message['price'])))
-        return True
-
-    elif message_type == 'done' and side == 'buy':
-        order_book.bids.remove_order(message['order_id'])
-        if message['order_id'] == open_orders.open_bid_order_id:
-            if message['reason'] == 'filled':
-                file_logger.info('bid filled @ {0}'.format(open_orders.open_bid_price))
-            open_orders.open_bid_order_id = None
-            open_orders.open_bid_price = None
-            open_orders.insufficient_btc = False
-        return True
-    elif message_type == 'done' and side == 'sell':
-        order_book.asks.remove_order(message['order_id'])
-        if message['order_id'] == open_orders.open_ask_order_id:
-            if message['reason'] == 'filled':
-                file_logger.info('ask filled @ {0}'.format(open_orders.open_ask_price))
-            open_orders.open_ask_order_id = None
-            open_orders.open_ask_price = None
-            open_orders.insufficient_usd = False
-        return True
-
-    elif message_type == 'change' and side == 'buy':
-        order_book.bids.change(message['order_id'], Decimal(message['new_size']))
-        return True
-    elif message_type == 'change' and side == 'sell':
-        order_book.asks.change(message['order_id'], Decimal(message['new_size']))
-        return True
-
-    else:
-        file_logger.error('Unhandled message: {0}'.format(pformat(message)))
-        return False
-
 
 
 def manage_orders():
