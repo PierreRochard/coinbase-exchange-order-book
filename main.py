@@ -1,7 +1,6 @@
 import asyncio
 from datetime import datetime
 from decimal import Decimal
-import functools
 from trading import file_logger
 from concurrent.futures import ThreadPoolExecutor
 
@@ -73,11 +72,11 @@ def websocket_to_order_book():
             return False
         max_bid = Decimal(order_book.bids.price_tree.max_key())
         min_ask = Decimal(order_book.asks.price_tree.min_key())
-        # print('Latency: {0:.6f} secs, '
-        #       'Min ask: {1:.2f}, Max bid: {2:.2f}, Spread: {3:.2f}'.format(
-        #     ((datetime.now(tzlocal()) - order_book.last_time).microseconds * 1e-6),
-        #     min_ask, max_bid, min_ask - max_bid), end='\r')
-        #
+        print('Latency: {0:.6f} secs, '
+              'Min ask: {1:.2f}, Max bid: {2:.2f}, Spread: {3:.2f}'.format(
+            ((datetime.now(tzlocal()) - order_book.last_time).microseconds * 1e-6),
+            min_ask, max_bid, min_ask - max_bid), end='\r')
+
 
 
 def manage_orders():
@@ -193,8 +192,8 @@ if __name__ == '__main__':
         file_logger.addHandler(stream_handler)
         command_line = True
     loop = asyncio.get_event_loop()
-    executor = ThreadPoolExecutor(2)
-    loop.run_in_executor(executor, manage_orders)
+    # executor = ThreadPoolExecutor(2)
+    # loop.run_in_executor(executor, manage_orders)
     n = 0
     while True:
         start_time = loop.time()
