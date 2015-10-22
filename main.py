@@ -3,6 +3,7 @@ from datetime import datetime
 from decimal import Decimal
 from trading import file_logger
 from concurrent.futures import ThreadPoolExecutor
+import argparse
 
 try:
     import ujson as json
@@ -13,7 +14,6 @@ import logging
 from pprint import pformat
 import random
 from socket import gaierror
-import sys
 import time
 
 from dateutil.tz import tzlocal
@@ -25,7 +25,12 @@ from trading.openorders import OpenOrders
 from trading.spreads import Spreads
 from orderbook.book import Book
 
-command_line = False
+
+ARGS = argparse.ArgumentParser(description='Coinbase Exchange bot.')
+ARGS.add_argument('--c', action='store_true', dest='command_line', default=False, help='Command line output')
+ARGS.add_argument('--t', action='store_true', dest='trading', default=False, help='Trade')
+
+args = ARGS.parse_args()
 
 order_book = Book()
 open_orders = OpenOrders()
@@ -70,32 +75,48 @@ def websocket_to_order_book():
         if not order_book.process_message(message):
             print(pformat(message))
             return False
-        max_bid = Decimal(order_book.bids.price_tree.max_key())
-        min_ask = Decimal(order_book.asks.price_tree.min_key())
-        print('Latency: {0:.6f} secs, '
-              'Min ask: {1:.2f}, Max bid: {2:.2f}, Spread: {3:.2f}'.format(
-            ((datetime.now(tzlocal()) - order_book.last_time).microseconds * 1e-6),
-            min_ask, max_bid, min_ask - max_bid), end='\r')
-
+        if args.trading:
+            if 'order_id' in message and message['order_id'] == open_orders.open_ask_order_id:
+                if message['type'] == 'done':
+                    open_orders.open_ask_order_id = None
+                    open_orders.open_ask_price = None
+                    open_orders.open_ask_status = None
+                    open_orders.open_ask_rejections = 0.0
+                else:
+                    open_orders.open_ask_status = message['type']
+            elif 'order_id' in message and message['order_id'] == open_orders.open_bid_order_id:
+                if message['type'] == 'done':
+                    open_orders.open_bid_order_id = None
+                    open_orders.open_bid_price = None
+                    open_orders.open_bid_status = None
+                    open_orders.open_bid_rejections = 0.0
+                else:
+                    open_orders.open_bid_status = message['type']
+        elif args.command_line:
+            max_bid = Decimal(order_book.bids.price_tree.max_key())
+            min_ask = Decimal(order_book.asks.price_tree.min_key())
+            print('Latency: {0:.6f} secs, '
+                  'Min ask: {1:.2f}, Max bid: {2:.2f}, Spread: {3:.2f}'.format(
+                ((datetime.now(tzlocal()) - order_book.last_time).microseconds * 1e-6),
+                min_ask, max_bid, min_ask - max_bid), end='\r')
 
 
 def manage_orders():
+    time.sleep(10)
     while True:
         time.sleep(0.005)
-        try:
-            if order_book.asks.price_tree.min_key() - order_book.bids.price_tree.max_key() < 0:
-                file_logger.warn('Negative spread: {0}'.format(order_book.asks.price_tree.min_key() - order_book.bids.price_tree.max_key()))
-                continue
-            if command_line:
-                print('Last message: {0:.6f} secs, '
-                      'Min ask: {1:.2f}, Max bid: {2:.2f}, Spread: {3:.2f}, '
-                      'Your ask: {4:.2f}, Your bid: {5:.2f}, Your spread: {6:.2f}'.format(
-                    ((datetime.now(tzlocal()) - order_book.last_time).microseconds * 1e-6),
-                    order_book.asks.price_tree.min_key(), order_book.bids.price_tree.max_key(), order_book.asks.price_tree.min_key() - order_book.bids.price_tree.max_key(),
-                    open_orders.float_open_ask_price, open_orders.float_open_bid_price,
-                                      open_orders.float_open_ask_price - open_orders.float_open_bid_price), end='\r')
-        except ValueError:
+
+        if order_book.asks.price_tree.min_key() - order_book.bids.price_tree.max_key() < 0:
+            file_logger.warn('Negative spread: {0}'.format(order_book.asks.price_tree.min_key() - order_book.bids.price_tree.max_key()))
             continue
+        if args.command_line:
+            print('Last message: {0:.6f} secs, '
+                  'Min ask: {1:.2f}, Max bid: {2:.2f}, Spread: {3:.2f}, '
+                  'Your ask: {4:.2f}, Your bid: {5:.2f}, Your spread: {6:.2f}'.format(
+                ((datetime.now(tzlocal()) - order_book.last_time).microseconds * 1e-6),
+                order_book.asks.price_tree.min_key(), order_book.bids.price_tree.max_key(), order_book.asks.price_tree.min_key() - order_book.bids.price_tree.max_key(),
+                open_orders.float_open_ask_price, open_orders.float_open_bid_price,
+                                  open_orders.float_open_ask_price - open_orders.float_open_bid_price), end='\r')
 
         if not open_orders.open_bid_order_id and not open_orders.insufficient_usd:
             if open_orders.insufficient_btc:
@@ -185,15 +206,17 @@ def manage_orders():
 
 
 if __name__ == '__main__':
-    if len(sys.argv) == 1:
+    if args.command_line:
         stream_handler = logging.StreamHandler()
         stream_handler.setFormatter(logging.Formatter('\n%(asctime)s, %(levelname)s, %(message)s'))
         stream_handler.setLevel(logging.INFO)
         file_logger.addHandler(stream_handler)
         command_line = True
+
     loop = asyncio.get_event_loop()
-    # executor = ThreadPoolExecutor(2)
-    # loop.run_in_executor(executor, manage_orders)
+    if args.trading:
+        executor = ThreadPoolExecutor(2)
+        loop.run_in_executor(executor, manage_orders)
     n = 0
     while True:
         start_time = loop.time()
