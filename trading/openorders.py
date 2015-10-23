@@ -11,10 +11,12 @@ class OpenOrders(object):
         self.open_bid_order_id = None
         self.open_bid_price = None
         self.open_bid_status = None
+        self.open_bid_cancelled = False
 
         self.open_ask_order_id = None
         self.open_ask_price = None
         self.open_ask_status = None
+        self.open_ask_cancelled = False
 
         self.insufficient_btc = False
         self.insufficient_usd = False

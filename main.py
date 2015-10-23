@@ -105,7 +105,6 @@ def manage_orders():
     time.sleep(10)
     while True:
         time.sleep(0.005)
-
         if order_book.asks.price_tree.min_key() - order_book.bids.price_tree.max_key() < 0:
             file_logger.warn('Negative spread: {0}'.format(order_book.asks.price_tree.min_key() - order_book.bids.price_tree.max_key()))
             continue
@@ -186,21 +185,27 @@ def manage_orders():
                 file_logger.error('Unhandled response: {0}'.format(pformat(response.json())))
             continue
 
-        if open_orders.open_bid_order_id and Decimal(open_orders.open_bid_price) < round(
-                        order_book.asks.price_tree.min_key() - Decimal(spreads.bid_adjustment_spread), 2):
+        if (open_orders.open_bid_order_id
+            and not open_orders.open_bid_cancelled
+            and Decimal(open_orders.open_bid_price) < round(order_book.asks.price_tree.min_key() -
+                                                                Decimal(spreads.bid_adjustment_spread), 2)):
             file_logger.info('CANCEL: open bid {0} threshold {1} diff {2}'.format(
                 Decimal(open_orders.open_bid_price),
                 round(order_book.asks.price_tree.min_key() - Decimal(spreads.bid_adjustment_spread), 2),
-                Decimal(open_orders.open_bid_price) - round(order_book.asks.price_tree.min_key() - Decimal(spreads.bid_adjustment_spread), 2)))
+                Decimal(open_orders.open_bid_price) - round(order_book.asks.price_tree.min_key() -
+                                                            Decimal(spreads.bid_adjustment_spread), 2)))
             open_orders.cancel('bid')
             continue
 
-        if open_orders.open_ask_order_id and Decimal(open_orders.open_ask_price) > round(
-                        order_book.bids.price_tree.max_key() + Decimal(spreads.ask_adjustment_spread), 2):
+        if (open_orders.open_ask_order_id
+            and not open_orders.open_ask_cancelled
+            and Decimal(open_orders.open_ask_price) > round(order_book.bids.price_tree.max_key() +
+                                                                Decimal(spreads.ask_adjustment_spread), 2)):
             file_logger.info('CANCEL: open ask {0} threshold {1} diff {2}'.format(
                 Decimal(open_orders.open_ask_price),
                 round(order_book.bids.price_tree.max_key() - Decimal(spreads.ask_adjustment_spread), 2),
-                Decimal(open_orders.open_ask_price) - round(order_book.bids.price_tree.max_key() + Decimal(spreads.ask_adjustment_spread), 2)))
+                Decimal(open_orders.open_ask_price) - round(order_book.bids.price_tree.max_key() +
+                                                            Decimal(spreads.ask_adjustment_spread), 2)))
             open_orders.cancel('ask')
             continue
 
