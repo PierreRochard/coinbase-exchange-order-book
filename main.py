@@ -56,7 +56,6 @@ def websocket_to_order_book():
             break
 
     order_book.get_level3()
-    open_orders.get_open_orders()
 
     [order_book.process_message(message) for message in messages if message['sequence'] > order_book.level3_sequence]
 
@@ -102,6 +101,8 @@ def websocket_to_order_book():
 
 
 def market_maker_strategy():
+    open_orders.get_open_orders()
+    open_orders.cancel_all()
     time.sleep(10)
     while True:
         time.sleep(0.005)
@@ -118,6 +119,7 @@ def market_maker_strategy():
                 order_book.asks.price_tree.min_key() - order_book.bids.price_tree.max_key(),
                 open_orders.float_open_ask_price, open_orders.float_open_bid_price,
                 open_orders.float_open_ask_price - open_orders.float_open_bid_price), end='\r')
+
         if not open_orders.open_bid_order_id:
             open_bid_price = order_book.asks.price_tree.min_key() - spreads.bid_spread - open_orders.open_bid_rejections
             if 0.01 * float(open_bid_price) < float(open_orders.accounts['USD']['available']):
@@ -172,36 +174,48 @@ def market_maker_strategy():
                     file_logger.error('Unhandled response: {0}'.format(pformat(response.json())))
                 continue
 
-        bid_too_far_out = open_orders.open_bid_price < (order_book.asks.price_tree.min_key()
-                                                        - spreads.bid_too_far_adjustment_spread)
-        bid_too_close = open_orders.open_bid_price > (order_book.bids.price_tree.max_key()
-                                                      - spreads.bid_too_close_adjustment_spread)
-        cancel_bid = bid_too_far_out or bid_too_close
-        if open_orders.open_bid_order_id and not open_orders.open_bid_cancelled and cancel_bid:
-            open_orders.cancel('bid')
-            continue
+        if open_orders.open_bid_order_id and not open_orders.open_bid_cancelled:
+            bid_too_far_out = open_orders.open_bid_price < (order_book.asks.price_tree.min_key()
+                                                            - spreads.bid_too_far_adjustment_spread)
+            bid_too_close = open_orders.open_bid_price > (order_book.bids.price_tree.max_key()
+                                                          - spreads.bid_too_close_adjustment_spread)
+            cancel_bid = bid_too_far_out or bid_too_close
+            if cancel_bid:
+                if bid_too_far_out:
+                    file_logger.info('CANCEL: open bid {0} too far from best ask: {1} spread: {2}'.format(
+                        open_orders.open_bid_price,
+                        order_book.asks.price_tree.min_key(),
+                        open_orders.open_bid_price - order_book.asks.price_tree.min_key()))
+                if bid_too_close:
+                    file_logger.info('CANCEL: open bid {0} too close to best bid: {1} spread: {2}'.format(
+                        open_orders.open_bid_price,
+                        order_book.bids.price_tree.max_key(),
+                        open_orders.open_bid_price - order_book.bids.price_tree.max_key()))
+                open_orders.cancel('bid')
+                continue
 
-        ask_too_far_out = open_orders.open_ask_price > (order_book.bids.price_tree.max_key() +
-                                                        spreads.ask_too_far_adjustment_spread)
+        if open_orders.open_ask_order_id and not open_orders.open_ask_cancelled:
+            ask_too_far_out = open_orders.open_ask_price > (order_book.bids.price_tree.max_key() +
+                                                            spreads.ask_too_far_adjustment_spread)
 
-        ask_too_close = open_orders.open_ask_price < (order_book.asks.price_tree.min_key() -
-                                                      spreads.ask_too_close_adjustment_spread)
+            ask_too_close = open_orders.open_ask_price < (order_book.asks.price_tree.min_key() -
+                                                          spreads.ask_too_close_adjustment_spread)
 
-        cancel_ask = ask_too_far_out or ask_too_close
+            cancel_ask = ask_too_far_out or ask_too_close
 
-        if open_orders.open_ask_order_id and not open_orders.open_ask_cancelled and cancel_ask:
-            if ask_too_far_out:
-                file_logger.info('CANCEL: open ask {0} too far from best bid: {1} spread: {2}'.format(
-                    open_orders.open_ask_price,
-                    order_book.bids.price_tree.max_key(),
-                    open_orders.open_ask_price - order_book.bids.price_tree.max_key()))
-            if ask_too_close:
-                file_logger.info('CANCEL: open ask {0} too close to best ask: {1} spread: {2}'.format(
-                    open_orders.open_ask_price,
-                    order_book.asks.price_tree.min_key(),
-                    open_orders.open_ask_price - order_book.asks.price_tree.min_key()))
-            open_orders.cancel('ask')
-            continue
+            if cancel_ask:
+                if ask_too_far_out:
+                    file_logger.info('CANCEL: open ask {0} too far from best bid: {1} spread: {2}'.format(
+                        open_orders.open_ask_price,
+                        order_book.bids.price_tree.max_key(),
+                        open_orders.open_ask_price - order_book.bids.price_tree.max_key()))
+                if ask_too_close:
+                    file_logger.info('CANCEL: open ask {0} too close to best ask: {1} spread: {2}'.format(
+                        open_orders.open_ask_price,
+                        order_book.asks.price_tree.min_key(),
+                        open_orders.open_ask_price - order_book.asks.price_tree.min_key()))
+                open_orders.cancel('ask')
+                continue
 
 
 def update_balances():
