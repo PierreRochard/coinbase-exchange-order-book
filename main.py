@@ -79,7 +79,7 @@ def websocket_to_order_book():
                     open_orders.open_ask_order_id = None
                     open_orders.open_ask_price = None
                     open_orders.open_ask_status = None
-                    open_orders.open_ask_rejections = 0.0
+                    open_orders.open_ask_rejections = Decimal('0.0')
                     open_orders.open_ask_cancelled = False
                 else:
                     open_orders.open_ask_status = message['type']
@@ -88,7 +88,7 @@ def websocket_to_order_book():
                     open_orders.open_bid_order_id = None
                     open_orders.open_bid_price = None
                     open_orders.open_bid_status = None
-                    open_orders.open_bid_rejections = 0.0
+                    open_orders.open_bid_rejections = Decimal('0.0')
                     open_orders.open_bid_cancelled = False
                 else:
                     open_orders.open_bid_status = message['type']
