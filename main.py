@@ -1,6 +1,5 @@
 import asyncio
 from datetime import datetime
-from decimal import Decimal
 from trading import file_logger
 from concurrent.futures import ThreadPoolExecutor
 import argparse
@@ -25,7 +24,6 @@ from trading.openorders import OpenOrders
 from trading.spreads import Spreads
 from orderbook.book import Book
 
-
 ARGS = argparse.ArgumentParser(description='Coinbase Exchange bot.')
 ARGS.add_argument('--c', action='store_true', dest='command_line', default=False, help='Command line output')
 ARGS.add_argument('--t', action='store_true', dest='trading', default=False, help='Trade')
@@ -40,7 +38,6 @@ spreads = Spreads()
 
 @asyncio.coroutine
 def websocket_to_order_book():
-
     try:
         coinbase_websocket = yield from websockets.connect("wss://ws-feed.exchange.coinbase.com")
     except gaierror:
@@ -82,6 +79,7 @@ def websocket_to_order_book():
                     open_orders.open_ask_price = None
                     open_orders.open_ask_status = None
                     open_orders.open_ask_rejections = 0.0
+                    open_orders.open_ask_cancelled = False
                 else:
                     open_orders.open_ask_status = message['type']
             elif 'order_id' in message and message['order_id'] == open_orders.open_bid_order_id:
@@ -90,23 +88,25 @@ def websocket_to_order_book():
                     open_orders.open_bid_price = None
                     open_orders.open_bid_status = None
                     open_orders.open_bid_rejections = 0.0
+                    open_orders.open_bid_cancelled = False
                 else:
                     open_orders.open_bid_status = message['type']
         elif args.command_line:
-            max_bid = Decimal(order_book.bids.price_tree.max_key())
-            min_ask = Decimal(order_book.asks.price_tree.min_key())
+            max_bid = order_book.bids.price_tree.max_key()
+            min_ask = order_book.asks.price_tree.min_key()
             print('Latency: {0:.6f} secs, '
                   'Min ask: {1:.2f}, Max bid: {2:.2f}, Spread: {3:.2f}'.format(
                 ((datetime.now(tzlocal()) - order_book.last_time).microseconds * 1e-6),
                 min_ask, max_bid, min_ask - max_bid), end='\r')
 
 
-def manage_orders():
+def market_maker_strategy():
     time.sleep(10)
     while True:
         time.sleep(0.005)
         if order_book.asks.price_tree.min_key() - order_book.bids.price_tree.max_key() < 0:
-            file_logger.warn('Negative spread: {0}'.format(order_book.asks.price_tree.min_key() - order_book.bids.price_tree.max_key()))
+            file_logger.warn('Negative spread: {0}'.format(
+                order_book.asks.price_tree.min_key() - order_book.bids.price_tree.max_key()))
             continue
         if args.command_line:
             print('Last message: {0:.6f} secs, '
@@ -116,12 +116,10 @@ def manage_orders():
                 order_book.asks.price_tree.min_key(), order_book.bids.price_tree.max_key(),
                 order_book.asks.price_tree.min_key() - order_book.bids.price_tree.max_key(),
                 open_orders.float_open_ask_price, open_orders.float_open_bid_price,
-                                  open_orders.float_open_ask_price - open_orders.float_open_bid_price), end='\r')
+                open_orders.float_open_ask_price - open_orders.float_open_bid_price), end='\r')
         if not open_orders.open_bid_order_id:
-            spreads.bid_spread = Decimal(round((random.randrange(15) + 6) / 100, 2))
-            open_bid_price = Decimal(round(order_book.asks.price_tree.min_key() - Decimal(spreads.bid_spread)
-                                           - Decimal(open_orders.open_bid_rejections), 2))
-            if 0.01*float(open_bid_price) < float(open_orders.accounts['USD']['available']):
+            open_bid_price = order_book.asks.price_tree.min_key() - spreads.bid_spread - open_orders.open_bid_rejections
+            if 0.01 * float(open_bid_price) < float(open_orders.accounts['USD']['available']):
                 order = {'size': '0.01',
                          'price': str(open_bid_price),
                          'side': 'buy',
@@ -147,9 +145,7 @@ def manage_orders():
                 continue
 
         if not open_orders.open_ask_order_id:
-            spreads.ask_spread = Decimal(round((random.randrange(15) + 6) / 100, 2))
-            open_ask_price = Decimal(round(order_book.bids.price_tree.max_key() + Decimal(spreads.ask_spread)
-                                           + Decimal(open_orders.open_ask_rejections), 2))
+            open_ask_price = order_book.bids.price_tree.max_key() + spreads.ask_spread + open_orders.open_ask_rejections
             if 0.01 < float(open_orders.accounts['BTC']['available']):
                 order = {'size': '0.01',
                          'price': str(open_ask_price),
@@ -175,27 +171,34 @@ def manage_orders():
                     file_logger.error('Unhandled response: {0}'.format(pformat(response.json())))
                 continue
 
-        if (open_orders.open_bid_order_id
-            and not open_orders.open_bid_cancelled
-            and Decimal(open_orders.open_bid_price) < round(order_book.asks.price_tree.min_key() -
-                                                                Decimal(spreads.bid_adjustment_spread), 2)):
-            file_logger.info('CANCEL: open bid {0} threshold {1} diff {2}'.format(
-                Decimal(open_orders.open_bid_price),
-                round(order_book.asks.price_tree.min_key() - Decimal(spreads.bid_adjustment_spread), 2),
-                Decimal(open_orders.open_bid_price) - round(order_book.asks.price_tree.min_key() -
-                                                            Decimal(spreads.bid_adjustment_spread), 2)))
+        bid_too_far_out = open_orders.open_bid_price < (order_book.asks.price_tree.min_key()
+                                                        - spreads.bid_too_far_adjustment_spread)
+        bid_too_close = open_orders.open_bid_price > (order_book.bids.price_tree.max_key()
+                                                      - spreads.bid_too_close_adjustment_spread)
+        cancel_bid = bid_too_far_out or bid_too_close
+        if open_orders.open_bid_order_id and not open_orders.open_bid_cancelled and cancel_bid:
             open_orders.cancel('bid')
             continue
 
-        if (open_orders.open_ask_order_id
-            and not open_orders.open_ask_cancelled
-            and Decimal(open_orders.open_ask_price) > round(order_book.bids.price_tree.max_key() +
-                                                                Decimal(spreads.ask_adjustment_spread), 2)):
-            file_logger.info('CANCEL: open ask {0} threshold {1} diff {2}'.format(
-                Decimal(open_orders.open_ask_price),
-                round(order_book.bids.price_tree.max_key() - Decimal(spreads.ask_adjustment_spread), 2),
-                Decimal(open_orders.open_ask_price) - round(order_book.bids.price_tree.max_key() +
-                                                            Decimal(spreads.ask_adjustment_spread), 2)))
+        ask_too_far_out = open_orders.open_ask_price > (order_book.bids.price_tree.max_key() +
+                                                        spreads.ask_too_far_adjustment_spread)
+
+        ask_too_close = open_orders.open_ask_price < (order_book.asks.price_tree.min_key() -
+                                                      spreads.ask_too_close_adjustment_spread)
+
+        cancel_ask = ask_too_far_out or ask_too_close
+
+        if open_orders.open_ask_order_id and not open_orders.open_ask_cancelled and cancel_ask:
+            if ask_too_far_out:
+                file_logger.info('CANCEL: open ask {0} too far from best bid: {1} spread: {2}'.format(
+                    open_orders.open_ask_price,
+                    order_book.bids.price_tree.max_key(),
+                    open_orders.open_ask_price - order_book.bids.price_tree.max_key()))
+            if ask_too_close:
+                file_logger.info('CANCEL: open ask {0} too close to best ask: {1} spread: {2}'.format(
+                    open_orders.open_ask_price,
+                    order_book.asks.price_tree.min_key(),
+                    open_orders.open_ask_price - order_book.asks.price_tree.min_key()))
             open_orders.cancel('ask')
             continue
 
@@ -217,7 +220,7 @@ if __name__ == '__main__':
     loop = asyncio.get_event_loop()
     if args.trading:
         executor = ThreadPoolExecutor(4)
-        loop.run_in_executor(executor, manage_orders)
+        loop.run_in_executor(executor, market_maker_strategy)
         loop.run_in_executor(executor, update_balances)
     n = 0
     while True:

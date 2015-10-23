@@ -1,4 +1,5 @@
 from pprint import pformat
+from decimal import Decimal
 
 import requests
 
@@ -20,8 +21,8 @@ class OpenOrders(object):
         self.open_ask_status = None
         self.open_ask_cancelled = False
 
-        self.open_ask_rejections = 0.0
-        self.open_bid_rejections = 0.0
+        self.open_ask_rejections = Decimal(0.0)
+        self.open_bid_rejections = Decimal(0.0)
 
     def cancel_all(self):
         if self.open_bid_order_id:
@@ -33,9 +34,11 @@ class OpenOrders(object):
         if side == 'bid':
             order_id = self.open_bid_order_id
             price = self.open_bid_price
+            self.open_bid_cancelled = True
         elif side == 'ask':
             order_id = self.open_ask_order_id
             price = self.open_ask_price
+            self.open_ask_cancelled = True
         else:
             return False
         response = requests.delete(exchange_api_url + 'orders/' + str(order_id), auth=exchange_auth)
@@ -54,13 +57,13 @@ class OpenOrders(object):
 
         try:
             self.open_bid_order_id = [order['id'] for order in open_orders if order['side'] == 'buy'][0]
-            self.open_bid_price = [order['price'] for order in open_orders if order['side'] == 'buy'][0]
+            self.open_bid_price = [Decimal(order['price']) for order in open_orders if order['side'] == 'buy'][0]
         except IndexError:
             pass
 
         try:
             self.open_ask_order_id = [order['id'] for order in open_orders if order['side'] == 'sell'][0]
-            self.open_ask_price = [order['price'] for order in open_orders if order['side'] == 'sell'][0]
+            self.open_ask_price = [Decimal(order['price']) for order in open_orders if order['side'] == 'sell'][0]
         except IndexError:
             pass
 
