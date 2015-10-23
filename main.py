@@ -147,8 +147,6 @@ def manage_orders():
                 else:
                     file_logger.error('Unhandled response: {0}'.format(pformat(response.json())))
                 continue
-            else:
-                print()
 
         if not open_orders.open_ask_order_id:
             size = Decimal(0.01)
