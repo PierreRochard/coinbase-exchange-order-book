@@ -8,6 +8,8 @@ from trading.exchange import exchange_api_url, exchange_auth
 
 class OpenOrders(object):
     def __init__(self):
+        self.accounts = {}
+
         self.open_bid_order_id = None
         self.open_bid_price = None
         self.open_bid_status = None
@@ -17,9 +19,6 @@ class OpenOrders(object):
         self.open_ask_price = None
         self.open_ask_status = None
         self.open_ask_cancelled = False
-
-        self.insufficient_btc = False
-        self.insufficient_usd = False
 
         self.open_ask_rejections = 0.0
         self.open_bid_rejections = 0.0
@@ -64,6 +63,11 @@ class OpenOrders(object):
             self.open_ask_price = [order['price'] for order in open_orders if order['side'] == 'sell'][0]
         except IndexError:
             pass
+
+    def get_balances(self):
+        accounts_query = requests.get(exchange_api_url + 'accounts', auth=exchange_auth).json()
+        for account in accounts_query:
+            self.accounts[account['currency']] = account
 
     @property
     def float_open_bid_price(self):

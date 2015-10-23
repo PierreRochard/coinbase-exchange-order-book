@@ -113,77 +113,70 @@ def manage_orders():
                   'Min ask: {1:.2f}, Max bid: {2:.2f}, Spread: {3:.2f}, '
                   'Your ask: {4:.2f}, Your bid: {5:.2f}, Your spread: {6:.2f}'.format(
                 ((datetime.now(tzlocal()) - order_book.last_time).microseconds * 1e-6),
-                order_book.asks.price_tree.min_key(), order_book.bids.price_tree.max_key(), order_book.asks.price_tree.min_key() - order_book.bids.price_tree.max_key(),
+                order_book.asks.price_tree.min_key(), order_book.bids.price_tree.max_key(),
+                order_book.asks.price_tree.min_key() - order_book.bids.price_tree.max_key(),
                 open_orders.float_open_ask_price, open_orders.float_open_bid_price,
                                   open_orders.float_open_ask_price - open_orders.float_open_bid_price), end='\r')
 
-        if not open_orders.open_bid_order_id and not open_orders.insufficient_usd:
-            if open_orders.insufficient_btc:
-                size = 0.1
-                open_bid_price = Decimal(round(order_book.bids.price_tree.max_key() + Decimal(open_orders.open_bid_rejections), 2))
-            else:
-                size = 0.01
-                spreads.bid_spread = Decimal(round((random.randrange(15) + 6) / 100, 2))
-                open_bid_price = Decimal(round(order_book.asks.price_tree.min_key() - Decimal(spreads.bid_spread)
-                                               - Decimal(open_orders.open_bid_rejections), 2))
-            order = {'size': size,
-                     'price': str(open_bid_price),
-                     'side': 'buy',
-                     'product_id': 'BTC-USD',
-                     'post_only': True}
-            response = requests.post(exchange_api_url + 'orders', json=order, auth=exchange_auth)
-            if 'status' in response.json() and response.json()['status'] == 'pending':
-                open_orders.open_bid_order_id = response.json()['id']
-                open_orders.open_bid_price = open_bid_price
-                open_orders.open_bid_rejections = 0.0
-                file_logger.info('new bid @ {0}'.format(open_bid_price))
-            elif 'status' in response.json() and response.json()['status'] == 'rejected':
-                open_orders.open_bid_order_id = None
-                open_orders.open_bid_price = None
-                open_orders.open_bid_rejections += 0.04
-                file_logger.warn('rejected: new bid @ {0}'.format(open_bid_price))
-            elif 'message' in response.json() and response.json()['message'] == 'Insufficient funds':
-                open_orders.insufficient_usd = True
-                open_orders.open_bid_order_id = None
-                open_orders.open_bid_price = None
-                file_logger.warn('Insufficient USD')
-            else:
-                file_logger.error('Unhandled response: {0}'.format(pformat(response.json())))
-            continue
+        if not open_orders.open_bid_order_id:
+            size = Decimal(0.01)
+            spreads.bid_spread = Decimal(round((random.randrange(15) + 6) / 100, 2))
+            open_bid_price = Decimal(round(order_book.asks.price_tree.min_key() - Decimal(spreads.bid_spread)
+                                           - Decimal(open_orders.open_bid_rejections), 2))
+            if size*open_bid_price < open_orders.accounts['USD']:
+                order = {'size': str(size),
+                         'price': str(open_bid_price),
+                         'side': 'buy',
+                         'product_id': 'BTC-USD',
+                         'post_only': True}
+                response = requests.post(exchange_api_url + 'orders', json=order, auth=exchange_auth)
+                if 'status' in response.json() and response.json()['status'] == 'pending':
+                    open_orders.open_bid_order_id = response.json()['id']
+                    open_orders.open_bid_price = open_bid_price
+                    open_orders.open_bid_rejections = 0.0
+                    file_logger.info('new bid @ {0}'.format(open_bid_price))
+                elif 'status' in response.json() and response.json()['status'] == 'rejected':
+                    open_orders.open_bid_order_id = None
+                    open_orders.open_bid_price = None
+                    open_orders.open_bid_rejections += 0.04
+                    file_logger.warn('rejected: new bid @ {0}'.format(open_bid_price))
+                elif 'message' in response.json() and response.json()['message'] == 'Insufficient funds':
+                    open_orders.open_bid_order_id = None
+                    open_orders.open_bid_price = None
+                    file_logger.warn('Insufficient USD')
+                else:
+                    file_logger.error('Unhandled response: {0}'.format(pformat(response.json())))
+                continue
 
-        if not open_orders.open_ask_order_id and not open_orders.insufficient_btc:
-            if open_orders.insufficient_usd:
-                size = 0.10
-                open_ask_price = Decimal(round(order_book.asks.price_tree.min_key() + Decimal(open_orders.open_ask_rejections), 2))
-            else:
-                size = 0.01
-                spreads.ask_spread = Decimal(round((random.randrange(15) + 6) / 100, 2))
-                open_ask_price = Decimal(round(order_book.bids.price_tree.max_key() + Decimal(spreads.ask_spread)
-                                               + Decimal(open_orders.open_ask_rejections), 2))
-            order = {'size': size,
-                     'price': str(open_ask_price),
-                     'side': 'sell',
-                     'product_id': 'BTC-USD',
-                     'post_only': True}
-            response = requests.post(exchange_api_url + 'orders', json=order, auth=exchange_auth)
-            if 'status' in response.json() and response.json()['status'] == 'pending':
-                open_orders.open_ask_order_id = response.json()['id']
-                open_orders.open_ask_price = open_ask_price
-                file_logger.info('new ask @ {0}'.format(open_ask_price))
-                open_orders.open_ask_rejections = 0
-            elif 'status' in response.json() and response.json()['status'] == 'rejected':
-                open_orders.open_ask_order_id = None
-                open_orders.open_ask_price = None
-                open_orders.open_ask_rejections += 0.04
-                file_logger.warn('rejected: new ask @ {0}'.format(open_ask_price))
-            elif 'message' in response.json() and response.json()['message'] == 'Insufficient funds':
-                open_orders.insufficient_btc = True
-                open_orders.open_ask_order_id = None
-                open_orders.open_ask_price = None
-                file_logger.warn('Insufficient BTC')
-            else:
-                file_logger.error('Unhandled response: {0}'.format(pformat(response.json())))
-            continue
+        if not open_orders.open_ask_order_id:
+            size = Decimal(0.01)
+            spreads.ask_spread = Decimal(round((random.randrange(15) + 6) / 100, 2))
+            open_ask_price = Decimal(round(order_book.bids.price_tree.max_key() + Decimal(spreads.ask_spread)
+                                           + Decimal(open_orders.open_ask_rejections), 2))
+            if size*open_ask_price < open_orders.accounts['BTC']:
+                order = {'size': str(size),
+                         'price': str(open_ask_price),
+                         'side': 'sell',
+                         'product_id': 'BTC-USD',
+                         'post_only': True}
+                response = requests.post(exchange_api_url + 'orders', json=order, auth=exchange_auth)
+                if 'status' in response.json() and response.json()['status'] == 'pending':
+                    open_orders.open_ask_order_id = response.json()['id']
+                    open_orders.open_ask_price = open_ask_price
+                    file_logger.info('new ask @ {0}'.format(open_ask_price))
+                    open_orders.open_ask_rejections = 0
+                elif 'status' in response.json() and response.json()['status'] == 'rejected':
+                    open_orders.open_ask_order_id = None
+                    open_orders.open_ask_price = None
+                    open_orders.open_ask_rejections += 0.04
+                    file_logger.warn('rejected: new ask @ {0}'.format(open_ask_price))
+                elif 'message' in response.json() and response.json()['message'] == 'Insufficient funds':
+                    open_orders.open_ask_order_id = None
+                    open_orders.open_ask_price = None
+                    file_logger.warn('Insufficient BTC')
+                else:
+                    file_logger.error('Unhandled response: {0}'.format(pformat(response.json())))
+                continue
 
         if (open_orders.open_bid_order_id
             and not open_orders.open_bid_cancelled
@@ -210,6 +203,12 @@ def manage_orders():
             continue
 
 
+def update_balances():
+    while True:
+        open_orders.get_balances()
+        time.sleep(30)
+
+
 if __name__ == '__main__':
     if args.command_line:
         stream_handler = logging.StreamHandler()
@@ -220,8 +219,9 @@ if __name__ == '__main__':
 
     loop = asyncio.get_event_loop()
     if args.trading:
-        executor = ThreadPoolExecutor(2)
+        executor = ThreadPoolExecutor(4)
         loop.run_in_executor(executor, manage_orders)
+        loop.run_in_executor(executor, update_balances)
     n = 0
     while True:
         start_time = loop.time()
