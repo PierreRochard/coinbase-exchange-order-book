@@ -123,7 +123,7 @@ def manage_orders():
             spreads.bid_spread = Decimal(round((random.randrange(15) + 6) / 100, 2))
             open_bid_price = Decimal(round(order_book.asks.price_tree.min_key() - Decimal(spreads.bid_spread)
                                            - Decimal(open_orders.open_bid_rejections), 2))
-            if size*open_bid_price < open_orders.accounts['USD']:
+            if size*open_bid_price < open_orders.accounts['USD']['available']:
                 order = {'size': str(size),
                          'price': str(open_bid_price),
                          'side': 'buy',
@@ -147,13 +147,15 @@ def manage_orders():
                 else:
                     file_logger.error('Unhandled response: {0}'.format(pformat(response.json())))
                 continue
+            else:
+                print()
 
         if not open_orders.open_ask_order_id:
             size = Decimal(0.01)
             spreads.ask_spread = Decimal(round((random.randrange(15) + 6) / 100, 2))
             open_ask_price = Decimal(round(order_book.bids.price_tree.max_key() + Decimal(spreads.ask_spread)
                                            + Decimal(open_orders.open_ask_rejections), 2))
-            if size*open_ask_price < open_orders.accounts['BTC']:
+            if size*open_ask_price < open_orders.accounts['BTC']['available']:
                 order = {'size': str(size),
                          'price': str(open_ask_price),
                          'side': 'sell',
