@@ -21,8 +21,8 @@ class OpenOrders(object):
         self.open_ask_status = None
         self.open_ask_cancelled = False
 
-        self.open_ask_rejections = Decimal(0.0)
-        self.open_bid_rejections = Decimal(0.0)
+        self.open_ask_rejections = Decimal('0.0')
+        self.open_bid_rejections = Decimal('0.0')
 
     def cancel_all(self):
         if self.open_bid_order_id:

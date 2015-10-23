@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime
+from decimal import Decimal
 from trading import file_logger
 from concurrent.futures import ThreadPoolExecutor
 import argparse
@@ -129,12 +130,12 @@ def market_maker_strategy():
                 if 'status' in response.json() and response.json()['status'] == 'pending':
                     open_orders.open_bid_order_id = response.json()['id']
                     open_orders.open_bid_price = open_bid_price
-                    open_orders.open_bid_rejections = 0.0
+                    open_orders.open_bid_rejections = Decimal('0.0')
                     file_logger.info('new bid @ {0}'.format(open_bid_price))
                 elif 'status' in response.json() and response.json()['status'] == 'rejected':
                     open_orders.open_bid_order_id = None
                     open_orders.open_bid_price = None
-                    open_orders.open_bid_rejections += 0.04
+                    open_orders.open_bid_rejections += Decimal('0.04')
                     file_logger.warn('rejected: new bid @ {0}'.format(open_bid_price))
                 elif 'message' in response.json() and response.json()['message'] == 'Insufficient funds':
                     open_orders.open_bid_order_id = None
@@ -157,11 +158,11 @@ def market_maker_strategy():
                     open_orders.open_ask_order_id = response.json()['id']
                     open_orders.open_ask_price = open_ask_price
                     file_logger.info('new ask @ {0}'.format(open_ask_price))
-                    open_orders.open_ask_rejections = 0
+                    open_orders.open_ask_rejections = Decimal('0.0')
                 elif 'status' in response.json() and response.json()['status'] == 'rejected':
                     open_orders.open_ask_order_id = None
                     open_orders.open_ask_price = None
-                    open_orders.open_ask_rejections += 0.04
+                    open_orders.open_ask_rejections += Decimal('0.04')
                     file_logger.warn('rejected: new ask @ {0}'.format(open_ask_price))
                 elif 'message' in response.json() and response.json()['message'] == 'Insufficient funds':
                     open_orders.open_ask_order_id = None
