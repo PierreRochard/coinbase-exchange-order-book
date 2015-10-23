@@ -102,6 +102,7 @@ def websocket_to_order_book():
 
 
 def manage_orders():
+    open_orders.get_balances()
     time.sleep(10)
     while True:
         time.sleep(0.005)
@@ -117,14 +118,12 @@ def manage_orders():
                 order_book.asks.price_tree.min_key() - order_book.bids.price_tree.max_key(),
                 open_orders.float_open_ask_price, open_orders.float_open_bid_price,
                                   open_orders.float_open_ask_price - open_orders.float_open_bid_price), end='\r')
-
         if not open_orders.open_bid_order_id:
-            size = Decimal(0.01)
             spreads.bid_spread = Decimal(round((random.randrange(15) + 6) / 100, 2))
             open_bid_price = Decimal(round(order_book.asks.price_tree.min_key() - Decimal(spreads.bid_spread)
                                            - Decimal(open_orders.open_bid_rejections), 2))
-            if size*open_bid_price < open_orders.accounts['USD']['available']:
-                order = {'size': str(size),
+            if 0.01*float(open_bid_price) < float(open_orders.accounts['USD']['available']):
+                order = {'size': '0.01',
                          'price': str(open_bid_price),
                          'side': 'buy',
                          'product_id': 'BTC-USD',
@@ -146,15 +145,15 @@ def manage_orders():
                     file_logger.warn('Insufficient USD')
                 else:
                     file_logger.error('Unhandled response: {0}'.format(pformat(response.json())))
+                open_orders.get_balances()
                 continue
 
         if not open_orders.open_ask_order_id:
-            size = Decimal(0.01)
             spreads.ask_spread = Decimal(round((random.randrange(15) + 6) / 100, 2))
             open_ask_price = Decimal(round(order_book.bids.price_tree.max_key() + Decimal(spreads.ask_spread)
                                            + Decimal(open_orders.open_ask_rejections), 2))
-            if size*open_ask_price < open_orders.accounts['BTC']['available']:
-                order = {'size': str(size),
+            if 0.01 < float(open_orders.accounts['BTC']['available']):
+                order = {'size': '0.01',
                          'price': str(open_ask_price),
                          'side': 'sell',
                          'product_id': 'BTC-USD',
@@ -176,6 +175,7 @@ def manage_orders():
                     file_logger.warn('Insufficient BTC')
                 else:
                     file_logger.error('Unhandled response: {0}'.format(pformat(response.json())))
+                open_orders.get_balances()
                 continue
 
         if (open_orders.open_bid_order_id
@@ -188,6 +188,7 @@ def manage_orders():
                 Decimal(open_orders.open_bid_price) - round(order_book.asks.price_tree.min_key() -
                                                             Decimal(spreads.bid_adjustment_spread), 2)))
             open_orders.cancel('bid')
+            open_orders.get_balances()
             continue
 
         if (open_orders.open_ask_order_id
@@ -200,13 +201,8 @@ def manage_orders():
                 Decimal(open_orders.open_ask_price) - round(order_book.bids.price_tree.max_key() +
                                                             Decimal(spreads.ask_adjustment_spread), 2)))
             open_orders.cancel('ask')
+            open_orders.get_balances()
             continue
-
-
-def update_balances():
-    while True:
-        open_orders.get_balances()
-        time.sleep(30)
 
 
 if __name__ == '__main__':
@@ -221,7 +217,6 @@ if __name__ == '__main__':
     if args.trading:
         executor = ThreadPoolExecutor(4)
         loop.run_in_executor(executor, manage_orders)
-        loop.run_in_executor(executor, update_balances)
     n = 0
     while True:
         start_time = loop.time()
