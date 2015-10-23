@@ -101,9 +101,9 @@ def websocket_to_order_book():
 
 
 def market_maker_strategy():
+    time.sleep(10)
     open_orders.get_open_orders()
     open_orders.cancel_all()
-    time.sleep(10)
     while True:
         time.sleep(0.005)
         if order_book.asks.price_tree.min_key() - order_book.bids.price_tree.max_key() < 0:
