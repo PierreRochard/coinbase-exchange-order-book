@@ -2,7 +2,6 @@ import asyncio
 from datetime import datetime
 from decimal import Decimal
 from trading import file_logger
-from concurrent.futures import ThreadPoolExecutor
 import argparse
 
 try:
@@ -91,13 +90,6 @@ def websocket_to_order_book():
                     open_orders.open_bid_cancelled = False
                 else:
                     open_orders.open_bid_status = message['type']
-        elif args.command_line:
-            max_bid = order_book.bids.price_tree.max_key()
-            min_ask = order_book.asks.price_tree.min_key()
-            print('Latency: {0:.6f} secs, '
-                  'Min ask: {1:.2f}, Max bid: {2:.2f}, Spread: {3:.2f}'.format(
-                ((datetime.now(tzlocal()) - order_book.last_time).microseconds * 1e-6),
-                min_ask, max_bid, min_ask - max_bid), end='\r')
 
 
 def market_maker_strategy():
@@ -110,16 +102,6 @@ def market_maker_strategy():
             file_logger.warn('Negative spread: {0}'.format(
                 order_book.asks.price_tree.min_key() - order_book.bids.price_tree.max_key()))
             continue
-        if args.command_line:
-            print('Last message: {0:.6f} secs, '
-                  'Min ask: {1:.2f}, Max bid: {2:.2f}, Spread: {3:.2f}, '
-                  'Your ask: {4:.2f}, Your bid: {5:.2f}, Your spread: {6:.2f}'.format(
-                ((datetime.now(tzlocal()) - order_book.last_time).microseconds * 1e-6),
-                order_book.asks.price_tree.min_key(), order_book.bids.price_tree.max_key(),
-                order_book.asks.price_tree.min_key() - order_book.bids.price_tree.max_key(),
-                open_orders.float_open_ask_price, open_orders.float_open_bid_price,
-                open_orders.float_open_ask_price - open_orders.float_open_bid_price), end='\r')
-
         if not open_orders.open_bid_order_id:
             open_bid_price = order_book.asks.price_tree.min_key() - spreads.bid_spread - open_orders.open_bid_rejections
             if 0.01 * float(open_bid_price) < float(open_orders.accounts['USD']['available']):
@@ -221,7 +203,7 @@ def market_maker_strategy():
 def buyer_strategy():
     time.sleep(10)
     while True:
-        time.sleep(0.005)
+        time.sleep(0.01)
         if order_book.asks.price_tree.min_key() - order_book.bids.price_tree.max_key() < 0:
             file_logger.warn('Negative spread: {0}'.format(
                 order_book.asks.price_tree.min_key() - order_book.bids.price_tree.max_key()))
@@ -249,6 +231,10 @@ def buyer_strategy():
                     open_orders.open_bid_order_id = None
                     open_orders.open_bid_price = None
                     file_logger.warn('Insufficient USD')
+                elif 'message' in response.json() and response.json()['message'] == 'request timestamp expired':
+                    open_orders.open_bid_order_id = None
+                    open_orders.open_bid_price = None
+                    file_logger.warn('Request timestamp expired')
                 else:
                     file_logger.error('Unhandled response: {0}'.format(pformat(response.json())))
                 continue
@@ -288,6 +274,20 @@ def update_orders():
         time.sleep(60*5)
 
 
+def monitor():
+    time.sleep(5)
+    while True:
+        time.sleep(0.001)
+        print('Last message: {0:.6f} secs, '
+              'Min ask: {1:.2f}, Max bid: {2:.2f}, Spread: {3:.2f}, '
+              'Your ask: {4:.2f}, Your bid: {5:.2f}, Your spread: {6:.2f}'.format(
+            ((datetime.now(tzlocal()) - order_book.last_time).microseconds * 1e-6),
+            order_book.asks.price_tree.min_key(), order_book.bids.price_tree.max_key(),
+            order_book.asks.price_tree.min_key() - order_book.bids.price_tree.max_key(),
+            open_orders.decimal_open_ask_price, open_orders.decimal_open_bid_price,
+            open_orders.decimal_open_ask_price - open_orders.decimal_open_bid_price), end='\r')
+
+
 if __name__ == '__main__':
     if args.command_line:
         stream_handler = logging.StreamHandler()
@@ -298,10 +298,11 @@ if __name__ == '__main__':
 
     loop = asyncio.get_event_loop()
     if args.trading:
-        executor = ThreadPoolExecutor(8)
-        loop.run_in_executor(executor, buyer_strategy)
-        loop.run_in_executor(executor, update_balances)
-        loop.run_in_executor(executor, update_orders)
+        loop.run_in_executor(None, buyer_strategy)
+        loop.run_in_executor(None, update_balances)
+        loop.run_in_executor(None, update_orders)
+    if args.command_line:
+        loop.run_in_executor(None, monitor)
     n = 0
     while True:
         start_time = loop.time()

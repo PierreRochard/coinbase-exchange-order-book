@@ -87,8 +87,8 @@ class OpenOrders(object):
             return Decimal('0.0')
 
     @property
-    def float_open_ask_price(self):
+    def decimal_open_ask_price(self):
         if self.open_ask_price:
-            return float(self.open_ask_price)
+            return self.open_bid_price
         else:
-            return 0.0
+            return Decimal('0.0')
