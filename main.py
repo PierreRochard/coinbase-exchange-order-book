@@ -229,7 +229,7 @@ def buyer_strategy():
         if not open_orders.open_bid_order_id:
             open_bid_price = order_book.asks.price_tree.min_key() - spreads.bid_spread - open_orders.open_bid_rejections
             if 0.01 * float(open_bid_price) < float(open_orders.accounts['USD']['available']):
-                order = {'size': '0.001',
+                order = {'size': '0.01',
                          'price': str(open_bid_price),
                          'side': 'buy',
                          'product_id': 'BTC-USD',

@@ -4,10 +4,10 @@ from decimal import Decimal
 class Spreads(object):
     def __init__(self):
         # amount over the highest ask that you are willing to buy btc for
-        self.bid_spread = Decimal('0.10')
+        self.bid_spread = Decimal('0.15')
 
         # amount below the lowest bid that you are willing to sell btc for
-        self.ask_spread = Decimal('0.10')
+        self.ask_spread = Decimal('0.15')
 
     # spread at which your ask is cancelled
     @property
