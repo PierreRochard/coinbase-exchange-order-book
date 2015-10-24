@@ -218,10 +218,74 @@ def market_maker_strategy():
                 continue
 
 
+def buyer_strategy():
+    time.sleep(10)
+    while True:
+        time.sleep(0.005)
+        if order_book.asks.price_tree.min_key() - order_book.bids.price_tree.max_key() < 0:
+            file_logger.warn('Negative spread: {0}'.format(
+                order_book.asks.price_tree.min_key() - order_book.bids.price_tree.max_key()))
+            continue
+        if not open_orders.open_bid_order_id:
+            open_bid_price = order_book.asks.price_tree.min_key() - spreads.bid_spread - open_orders.open_bid_rejections
+            if 0.01 * float(open_bid_price) < float(open_orders.accounts['USD']['available']):
+                order = {'size': '0.001',
+                         'price': str(open_bid_price),
+                         'side': 'buy',
+                         'product_id': 'BTC-USD',
+                         'post_only': True}
+                response = requests.post(exchange_api_url + 'orders', json=order, auth=exchange_auth)
+                if 'status' in response.json() and response.json()['status'] == 'pending':
+                    open_orders.open_bid_order_id = response.json()['id']
+                    open_orders.open_bid_price = open_bid_price
+                    open_orders.open_bid_rejections = Decimal('0.0')
+                    file_logger.info('new bid @ {0}'.format(open_bid_price))
+                elif 'status' in response.json() and response.json()['status'] == 'rejected':
+                    open_orders.open_bid_order_id = None
+                    open_orders.open_bid_price = None
+                    open_orders.open_bid_rejections += Decimal('0.04')
+                    file_logger.warn('rejected: new bid @ {0}'.format(open_bid_price))
+                elif 'message' in response.json() and response.json()['message'] == 'Insufficient funds':
+                    open_orders.open_bid_order_id = None
+                    open_orders.open_bid_price = None
+                    file_logger.warn('Insufficient USD')
+                else:
+                    file_logger.error('Unhandled response: {0}'.format(pformat(response.json())))
+                continue
+
+        if open_orders.open_bid_order_id and not open_orders.open_bid_cancelled:
+            bid_too_far_out = open_orders.open_bid_price < (order_book.asks.price_tree.min_key()
+                                                            - spreads.bid_too_far_adjustment_spread)
+            bid_too_close = open_orders.open_bid_price > (order_book.bids.price_tree.max_key()
+                                                          - spreads.bid_too_close_adjustment_spread)
+            cancel_bid = bid_too_far_out or bid_too_close
+            if cancel_bid:
+                if bid_too_far_out:
+                    file_logger.info('CANCEL: open bid {0} too far from best ask: {1} spread: {2}'.format(
+                        open_orders.open_bid_price,
+                        order_book.asks.price_tree.min_key(),
+                        open_orders.open_bid_price - order_book.asks.price_tree.min_key()))
+                if bid_too_close:
+                    file_logger.info('CANCEL: open bid {0} too close to best bid: {1} spread: {2}'.format(
+                        open_orders.open_bid_price,
+                        order_book.bids.price_tree.max_key(),
+                        order_book.bids.price_tree.max_key() - open_orders.open_bid_price))
+                open_orders.cancel('bid')
+                continue
+
+
 def update_balances():
     while True:
         open_orders.get_balances()
         time.sleep(30)
+
+
+def update_orders():
+    time.sleep(5)
+    open_orders.cancel_all()
+    while True:
+        open_orders.get_open_orders()
+        time.sleep(60*5)
 
 
 if __name__ == '__main__':
@@ -234,9 +298,10 @@ if __name__ == '__main__':
 
     loop = asyncio.get_event_loop()
     if args.trading:
-        executor = ThreadPoolExecutor(4)
-        loop.run_in_executor(executor, market_maker_strategy)
+        executor = ThreadPoolExecutor(8)
+        loop.run_in_executor(executor, buyer_strategy)
         loop.run_in_executor(executor, update_balances)
+        loop.run_in_executor(executor, update_orders)
     n = 0
     while True:
         start_time = loop.time()

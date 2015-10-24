@@ -15,14 +15,13 @@ class OpenOrders(object):
         self.open_bid_price = None
         self.open_bid_status = None
         self.open_bid_cancelled = False
+        self.open_bid_rejections = Decimal('0.0')
 
         self.open_ask_order_id = None
         self.open_ask_price = None
         self.open_ask_status = None
         self.open_ask_cancelled = False
-
         self.open_ask_rejections = Decimal('0.0')
-        self.open_bid_rejections = Decimal('0.0')
 
     def cancel_all(self):
         if self.open_bid_order_id:
@@ -59,13 +58,21 @@ class OpenOrders(object):
             self.open_bid_order_id = [order['id'] for order in open_orders if order['side'] == 'buy'][0]
             self.open_bid_price = [Decimal(order['price']) for order in open_orders if order['side'] == 'buy'][0]
         except IndexError:
-            pass
+            self.open_bid_order_id = None
+            self.open_bid_price = None
+            self.open_bid_status = None
+            self.open_bid_cancelled = False
+            self.open_bid_rejections = Decimal('0.0')
 
         try:
             self.open_ask_order_id = [order['id'] for order in open_orders if order['side'] == 'sell'][0]
             self.open_ask_price = [Decimal(order['price']) for order in open_orders if order['side'] == 'sell'][0]
         except IndexError:
-            pass
+            self.open_ask_order_id = None
+            self.open_ask_price = None
+            self.open_ask_status = None
+            self.open_ask_cancelled = False
+            self.open_ask_rejections = Decimal('0.0')
 
     def get_balances(self):
         accounts_query = requests.get(exchange_api_url + 'accounts', auth=exchange_auth).json()
@@ -73,11 +80,11 @@ class OpenOrders(object):
             self.accounts[account['currency']] = account
 
     @property
-    def float_open_bid_price(self):
+    def decimal_open_bid_price(self):
         if self.open_bid_price:
-            return float(self.open_bid_price)
+            return self.open_bid_price
         else:
-            return 0.0
+            return Decimal('0.0')
 
     @property
     def float_open_ask_price(self):
