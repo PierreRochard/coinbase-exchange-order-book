@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime
 import shutil
 import os
@@ -9,15 +10,14 @@ import requests
 from twython import Twython, TwythonError
 
 from trading.exchange import exchange_api_url, exchange_auth
-from twitter_config import APP_KEY, APP_SECRET, OAUTH_TOKEN, OAUTH_TOKEN_SECRET
-
+from twitter_config import APP_KEY, APP_SECRET, OAUTH_TOKEN, OAUTH_TOKEN_SECRET, AUTHORIZED_USER
 
 twitter = Twython(APP_KEY, APP_SECRET, OAUTH_TOKEN, OAUTH_TOKEN_SECRET)
 
 minutes = 3.14
 
 
-def run():
+def tweet_out():
     root_directory = os.path.dirname(os.path.abspath(__file__))
     matches = []
     for root, directory_names, file_names in os.walk(root_directory):
@@ -89,5 +89,22 @@ def run():
             print('TwythonError')
         time.sleep(minutes*60)
 
+
+def check_logs():
+    last_message = None
+    while True:
+
+        log_files = ['coinbase_stdout.log', 'order_book_log.csv']
+        for log_file in log_files:
+            if os.path.isfile(log_file):
+                with open(log_file) as log:
+                    message = log.read()
+                    if message != last_message and message is not None:
+                        twitter.send_direct_message(screen_name=AUTHORIZED_USER,
+                                                    text=message)
+        time.sleep(minutes*61)
+
 if __name__ == '__main__':
-    run()
+    loop = asyncio.get_event_loop()
+    loop.run_in_executor(None, tweet_out)
+    loop.run_in_executor(None, check_logs)

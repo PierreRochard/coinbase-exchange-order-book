@@ -80,3 +80,5 @@ log.csv
 
 .idea/*
 keys/*
+oldlogs/*
+testdata/*.json
