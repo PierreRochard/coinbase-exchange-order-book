@@ -19,15 +19,15 @@ minutes = 3.14
 
 def run():
     root_directory = os.path.dirname(os.path.abspath(__file__))
-    print(root_directory)
     matches = []
     for root, directory_names, file_names in os.walk(root_directory):
         for file_name in file_names:
             if file_name.endswith(('.csv', '.log')):
                 matches.append((os.path.join(root, file_name), file_name))
     for log_file_source, log_file_name in matches:
-        destination = os.path.join(root_directory, 'oldlogs/', str(datetime.now(tzlocal())) + log_file_name)
-        shutil.move(log_file_source, destination)
+        if sum(1 for _ in open(log_file_source)) > 30:
+            destination = os.path.join(root_directory, 'oldlogs/', str(datetime.now(tzlocal())) + log_file_name)
+            shutil.move(log_file_source, destination)
 
     while True:
         tweet = ''
