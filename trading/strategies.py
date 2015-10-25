@@ -163,17 +163,17 @@ def buyer_strategy(order_book, open_orders, spreads):
                 continue
 
         if open_orders.open_bid_order_id and not open_orders.open_bid_cancelled:
-            bid_too_far_out = open_orders.open_bid_price < (order_book.asks.price_tree.min_key()
+            bid_too_far_out = open_orders.open_bid_price < (order_book.bids.price_tree.max_key()
                                                             - spreads.bid_too_far_adjustment_spread)
             bid_too_close = open_orders.open_bid_price > (order_book.bids.price_tree.max_key()
                                                           - spreads.bid_too_close_adjustment_spread)
             cancel_bid = bid_too_far_out or bid_too_close
             if cancel_bid:
                 if bid_too_far_out:
-                    file_logger.info('CANCEL: open bid {0} too far from best ask: {1} spread: {2}'.format(
+                    file_logger.info('CANCEL: open bid {0} too far from best bid: {1} spread: {2}'.format(
                         open_orders.open_bid_price,
-                        order_book.asks.price_tree.min_key(),
-                        open_orders.open_bid_price - order_book.asks.price_tree.min_key()))
+                        order_book.bids.price_tree.max_key(),
+                        order_book.bids.price_tree.max_key() - open_orders.open_bid_price))
                 if bid_too_close:
                     file_logger.info('CANCEL: open bid {0} too close to best bid: {1} spread: {2}'.format(
                         open_orders.open_bid_price,
