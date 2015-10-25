@@ -136,26 +136,30 @@ def buyer_strategy(order_book, open_orders, spreads):
                          'product_id': 'BTC-USD',
                          'post_only': True}
                 response = requests.post(exchange_api_url + 'orders', json=order, auth=exchange_auth)
-                if 'status' in response.json() and response.json()['status'] == 'pending':
-                    open_orders.open_bid_order_id = response.json()['id']
+                try:
+                    response = response.json()
+                except ValueError:
+                    file_logger.error('Unhandled response: {0}'.format(pformat(response)))
+                if 'status' in response and response['status'] == 'pending':
+                    open_orders.open_bid_order_id = response['id']
                     open_orders.open_bid_price = open_bid_price
                     open_orders.open_bid_rejections = Decimal('0.0')
                     file_logger.info('new bid @ {0}'.format(open_bid_price))
-                elif 'status' in response.json() and response.json()['status'] == 'rejected':
+                elif 'status' in response and response['status'] == 'rejected':
                     open_orders.open_bid_order_id = None
                     open_orders.open_bid_price = None
                     open_orders.open_bid_rejections += Decimal('0.04')
                     file_logger.warn('rejected: new bid @ {0}'.format(open_bid_price))
-                elif 'message' in response.json() and response.json()['message'] == 'Insufficient funds':
+                elif 'message' in response and response['message'] == 'Insufficient funds':
                     open_orders.open_bid_order_id = None
                     open_orders.open_bid_price = None
                     file_logger.warn('Insufficient USD')
-                elif 'message' in response.json() and response.json()['message'] == 'request timestamp expired':
+                elif 'message' in response and response['message'] == 'request timestamp expired':
                     open_orders.open_bid_order_id = None
                     open_orders.open_bid_price = None
                     file_logger.warn('Request timestamp expired')
                 else:
-                    file_logger.error('Unhandled response: {0}'.format(pformat(response.json())))
+                    file_logger.error('Unhandled response: {0}'.format(pformat(response)))
                 continue
 
         if open_orders.open_bid_order_id and not open_orders.open_bid_cancelled:
