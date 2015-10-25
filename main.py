@@ -5,7 +5,8 @@ import argparse
 
 import functools
 import pytz
-from trading import file_logger
+from trading import file_logger as trading_file_logger
+from orderbook import file_logger as order_book_file_logger
 import numpy
 
 try:
@@ -44,7 +45,7 @@ def websocket_to_order_book():
     try:
         coinbase_websocket = yield from websockets.connect("wss://ws-feed.exchange.coinbase.com")
     except gaierror:
-        file_logger.error('socket.gaierror - had a problem connecting to Coinbase feed')
+        order_book_file_logger.error('socket.gaierror - had a problem connecting to Coinbase feed')
         return
 
     yield from coinbase_websocket.send('{"type": "subscribe", "product_id": "BTC-USD"}')
@@ -64,12 +65,12 @@ def websocket_to_order_book():
     while True:
         message = yield from coinbase_websocket.recv()
         if message is None:
-            file_logger.error('Websocket message is None.')
+            order_book_file_logger.error('Websocket message is None.')
             return False
         try:
             message = json.loads(message)
         except TypeError:
-            file_logger.error('JSON did not load, see ' + str(message))
+            order_book_file_logger.error('JSON did not load, see ' + str(message))
             return False
         if args.command_line:
             messages += [datetime.strptime(message['time'], '%Y-%m-%dT%H:%M:%S.%fZ').replace(tzinfo=pytz.UTC)]
@@ -139,7 +140,8 @@ if __name__ == '__main__':
         stream_handler = logging.StreamHandler()
         stream_handler.setFormatter(logging.Formatter('\n%(asctime)s, %(levelname)s, %(message)s'))
         stream_handler.setLevel(logging.INFO)
-        file_logger.addHandler(stream_handler)
+        trading_file_logger.addHandler(stream_handler)
+        order_book_file_logger.addHandler(stream_handler)
         command_line = True
 
     loop = asyncio.get_event_loop()
@@ -158,7 +160,7 @@ if __name__ == '__main__':
         if seconds < 2:
             n += 1
             sleep_time = (2 ** n) + (random.randint(0, 1000) / 1000)
-            file_logger.error('Websocket connectivity problem, going to sleep for {0}'.format(sleep_time))
+            order_book_file_logger.error('Websocket connectivity problem, going to sleep for {0}'.format(sleep_time))
             time.sleep(sleep_time)
             if n > 6:
                 n = 0
