@@ -123,7 +123,7 @@ def market_maker_strategy(open_orders, order_book, spreads):
                 continue
 
 
-def buyer_strategy(open_orders, order_book, spreads):
+def buyer_strategy(order_book, open_orders, spreads):
     time.sleep(10)
     while True:
         time.sleep(0.001)
