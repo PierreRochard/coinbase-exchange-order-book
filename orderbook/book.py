@@ -25,6 +25,9 @@ class Book(object):
         self.first_sequence = 0
         self.last_sequence = 0
         self.last_time = datetime.now(tzlocal())
+        self.average_rate = 0.0
+        self.fastest_rate = 0.0
+        self.slowest_rate = 0.0
 
     def get_level3(self, json_doc=None):
         if not json_doc:

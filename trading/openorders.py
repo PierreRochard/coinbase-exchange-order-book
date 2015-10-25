@@ -49,7 +49,6 @@ class OpenOrders(object):
             file_logger.info('{0} already filled: {1} @ {2}'.format(side, order_id, price))
         else:
             file_logger.error('Unhandled response: {0}'.format((pformat(response.json()))))
-            raise Exception()
 
     def get_open_orders(self):
         open_orders = requests.get(exchange_api_url + 'orders', auth=exchange_auth).json()
