@@ -27,6 +27,7 @@ from trading.openorders import OpenOrders
 from trading.spreads import Spreads
 from orderbook.book import Book
 from trading.strategies import buyer_strategy
+from trading.treasury import nostro_transfer
 
 ARGS = argparse.ArgumentParser(description='Coinbase Exchange bot.')
 ARGS.add_argument('--c', action='store_true', dest='command_line', default=False, help='Command line output')
@@ -149,6 +150,7 @@ if __name__ == '__main__':
         loop.run_in_executor(None, functools.partial(buyer_strategy, order_book, open_orders, spreads))
         loop.run_in_executor(None, update_balances)
         loop.run_in_executor(None, update_orders)
+        loop.run_in_executor(None, nostro_transfer)
     if args.command_line:
         loop.run_in_executor(None, monitor)
     n = 0

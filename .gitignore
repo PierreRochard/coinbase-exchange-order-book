@@ -82,3 +82,4 @@ log.csv
 keys/*
 oldlogs/*
 testdata/*.json
+trading/treasury_config.py
