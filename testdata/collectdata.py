@@ -1,10 +1,7 @@
+import argparse
 import asyncio
 from datetime import datetime, timedelta
-
-try:
-    import ujson as json
-except ImportError:
-    import json
+import json
 import pytz
 
 from dateutil.tz import tzlocal
@@ -12,7 +9,11 @@ import requests
 import websockets
 
 
-minutes = 30
+ARGS = argparse.ArgumentParser(description='Coinbase Exchange Data Collector')
+ARGS.add_argument('--m', action='store', dest='minutes', default=5, help='Minutes to run')
+args = ARGS.parse_args()
+
+minutes = int(args.minutes)
 begin = datetime.now(tzlocal())
 end = begin + timedelta(minutes=minutes)
 
