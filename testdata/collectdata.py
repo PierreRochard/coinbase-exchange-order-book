@@ -40,7 +40,7 @@ def get_websocket_data():
         message = yield from coinbase_websocket.recv()
         message = json.loads(message)
         messages += [message]
-        latencies[message['sequence']] = int((datetime.now(tzlocal()) -
+        latencies[message['time']] = int((datetime.now(tzlocal()) -
                                               datetime.strptime(message['time'], '%Y-%m-%dT%H:%M:%S.%fZ')
                                               .replace(tzinfo=pytz.UTC)).microseconds)
         if datetime.now(tzlocal()) > end:
