@@ -189,9 +189,9 @@ def vwap_buyer_strategy(order_book, open_orders):
         time.sleep(1)
         if not open_orders.open_bid_order_id:
             vwap = order_book.vwap(20)
-            open_bid_price = order_book.bids.price_tree.max_key()
-            vwap_bid = vwap * Decimal('0.99')
-            if vwap_bid <= open_bid_price and 0.01 * float(vwap_bid) < float(open_orders.accounts['USD']['available']):
+            best_bid = order_book.bids.price_tree.max_key()
+            vwap_bid = round(vwap * Decimal('0.99'), 2)
+            if vwap_bid <= best_bid and 0.01 * float(vwap_bid) < float(open_orders.accounts['USD']['available']):
                 order = {'size': '0.01',
                          'price': str(vwap_bid),
                          'side': 'buy',
@@ -226,12 +226,12 @@ def vwap_buyer_strategy(order_book, open_orders):
 
         if open_orders.open_bid_order_id and not open_orders.open_bid_cancelled:
             vwap = order_book.vwap(20)
-            vwap_adj = vwap * Decimal('0.985')
+            vwap_adj = round(vwap * Decimal('0.985'), 2)
             bid_too_far_out = open_orders.open_bid_price < vwap_adj
             if bid_too_far_out:
                 file_logger.info('CANCEL: open bid {0} too far from best bid: {1} spread: {2}'.format(
                     open_orders.open_bid_price,
                     order_book.bids.price_tree.max_key(),
                     order_book.bids.price_tree.max_key() - open_orders.open_bid_price))
-            open_orders.cancel('bid')
+                open_orders.cancel('bid')
             continue

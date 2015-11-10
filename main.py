@@ -123,7 +123,7 @@ def monitor():
     time.sleep(5)
     while True:
         time.sleep(1)
-        vwap = float(order_book.vwap(20))
+        vwap = order_book.vwap(20)
         print('Last message: {0:.6f} secs, '
               'Min ask: {1:.2f}, Max bid: {2:.2f}, Spread: {3:.2f}, '
               'VWAP: {4:.2f}, Bid: {5:.2f}, Spread: {6:.2f}, '
