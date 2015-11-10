@@ -117,6 +117,8 @@ class Book(object):
 
     def vwap(self, minutes):
         df = pd.DataFrame(self.matches)
+        df['size'] = pd.to_numeric(df['size'])
+        df['price'] = pd.to_numeric(df['price'])
         df['product'] = df[["price", "size"]].product(axis=1)
         window = str(minutes) + 'min'
         df.index = df['time']

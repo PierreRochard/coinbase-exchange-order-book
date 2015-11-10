@@ -123,7 +123,7 @@ def monitor():
     time.sleep(5)
     while True:
         time.sleep(1)
-        vwap = order_book.vwap(20)
+        vwap = float(order_book.vwap(20))
         print('Last message: {0:.6f} secs, '
               'Min ask: {1:.2f}, Max bid: {2:.2f}, Spread: {3:.2f}, '
               'VWAP: {4:.2f}, Bid: {5:.2f}, Spread: {6:.2f}, '
@@ -132,8 +132,8 @@ def monitor():
             order_book.asks.price_tree.min_key(),
             order_book.bids.price_tree.max_key(),
             order_book.asks.price_tree.min_key() - order_book.bids.price_tree.max_key(),
-            open_orders.decimal_open_bid_price,
             vwap,
+            open_orders.decimal_open_bid_price,
             open_orders.decimal_open_bid_price - vwap,
             order_book.average_rate*1e-6,
             order_book.fastest_rate*1e-6,
@@ -151,7 +151,7 @@ if __name__ == '__main__':
 
     loop = asyncio.get_event_loop()
     if args.trading:
-        loop.run_in_executor(None, functools.partial(vwap_buyer_strategy, order_book, open_orders, spreads))
+        loop.run_in_executor(None, functools.partial(vwap_buyer_strategy, order_book, open_orders))
         loop.run_in_executor(None, update_balances)
         loop.run_in_executor(None, update_orders)
     if args.command_line:

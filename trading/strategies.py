@@ -183,7 +183,7 @@ def buyer_strategy(order_book, open_orders, spreads):
                 continue
 
 
-def vwap_buyer_strategy(order_book, open_orders, spreads):
+def vwap_buyer_strategy(order_book, open_orders):
     time.sleep(10)
     while True:
         time.sleep(1)
