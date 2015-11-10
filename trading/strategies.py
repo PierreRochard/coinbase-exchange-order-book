@@ -186,14 +186,14 @@ def buyer_strategy(order_book, open_orders, spreads):
 def vwap_buyer_strategy(order_book, open_orders, spreads):
     time.sleep(10)
     while True:
-        time.sleep(0.001)
+        time.sleep(1)
         if not open_orders.open_bid_order_id:
             vwap = order_book.vwap(20)
-            best_bid = order_book.bids.price_tree.max_key()
-            open_bid_price = best_bid - spreads.bid_spread
-            if vwap > best_bid and 0.01 * float(open_bid_price) < float(open_orders.accounts['USD']['available']):
+            open_bid_price = order_book.bids.price_tree.max_key()
+            vwap_bid = vwap * Decimal('0.99')
+            if vwap_bid <= open_bid_price and 0.01 * float(vwap_bid) < float(open_orders.accounts['USD']['available']):
                 order = {'size': '0.01',
-                         'price': str(open_bid_price),
+                         'price': str(vwap_bid),
                          'side': 'buy',
                          'product_id': 'BTC-USD',
                          'post_only': True}
@@ -204,14 +204,14 @@ def vwap_buyer_strategy(order_book, open_orders, spreads):
                     file_logger.error('Unhandled response: {0}'.format(pformat(response)))
                 if 'status' in response and response['status'] == 'pending':
                     open_orders.open_bid_order_id = response['id']
-                    open_orders.open_bid_price = open_bid_price
+                    open_orders.open_bid_price = vwap_bid
                     open_orders.open_bid_rejections = Decimal('0.0')
-                    file_logger.info('new bid @ {0}'.format(open_bid_price))
+                    file_logger.info('new bid @ {0}'.format(vwap_bid))
                 elif 'status' in response and response['status'] == 'rejected':
                     open_orders.open_bid_order_id = None
                     open_orders.open_bid_price = None
                     open_orders.open_bid_rejections += Decimal('0.04')
-                    file_logger.warn('rejected: new bid @ {0}'.format(open_bid_price))
+                    file_logger.warn('rejected: new bid @ {0}'.format(vwap_bid))
                 elif 'message' in response and response['message'] == 'Insufficient funds':
                     open_orders.open_bid_order_id = None
                     open_orders.open_bid_price = None
@@ -225,21 +225,13 @@ def vwap_buyer_strategy(order_book, open_orders, spreads):
                 continue
 
         if open_orders.open_bid_order_id and not open_orders.open_bid_cancelled:
-            bid_too_far_out = open_orders.open_bid_price < (order_book.bids.price_tree.max_key()
-                                                            - spreads.bid_too_far_adjustment_spread)
-            bid_too_close = open_orders.open_bid_price > (order_book.bids.price_tree.max_key()
-                                                          - spreads.bid_too_close_adjustment_spread)
-            cancel_bid = bid_too_far_out or bid_too_close
-            if cancel_bid:
-                if bid_too_far_out:
-                    file_logger.info('CANCEL: open bid {0} too far from best bid: {1} spread: {2}'.format(
-                        open_orders.open_bid_price,
-                        order_book.bids.price_tree.max_key(),
-                        order_book.bids.price_tree.max_key() - open_orders.open_bid_price))
-                if bid_too_close:
-                    file_logger.info('CANCEL: open bid {0} too close to best bid: {1} spread: {2}'.format(
-                        open_orders.open_bid_price,
-                        order_book.bids.price_tree.max_key(),
-                        order_book.bids.price_tree.max_key() - open_orders.open_bid_price))
-                open_orders.cancel('bid')
-                continue
+            vwap = order_book.vwap(20)
+            vwap_adj = vwap * Decimal('0.985')
+            bid_too_far_out = open_orders.open_bid_price < vwap_adj
+            if bid_too_far_out:
+                file_logger.info('CANCEL: open bid {0} too far from best bid: {1} spread: {2}'.format(
+                    open_orders.open_bid_price,
+                    order_book.bids.price_tree.max_key(),
+                    order_book.bids.price_tree.max_key() - open_orders.open_bid_price))
+            open_orders.cancel('bid')
+            continue

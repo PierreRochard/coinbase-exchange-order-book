@@ -122,7 +122,7 @@ def update_orders():
 def monitor():
     time.sleep(5)
     while True:
-        time.sleep(0.001)
+        time.sleep(1)
         vwap = order_book.vwap(20)
         print('Last message: {0:.6f} secs, '
               'Min ask: {1:.2f}, Max bid: {2:.2f}, Spread: {3:.2f}, '
@@ -138,7 +138,6 @@ def monitor():
             order_book.average_rate*1e-6,
             order_book.fastest_rate*1e-6,
             order_book.slowest_rate*1e-6), end='\r')
-
 
 
 if __name__ == '__main__':
