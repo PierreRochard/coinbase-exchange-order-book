@@ -21,8 +21,8 @@ class Spreads(object):
     # spread at which your bid is cancelled
     @property
     def bid_too_far_adjustment_spread(self):
-        return Decimal(self.bid_spread) + Decimal('0.15')
+        return Decimal(self.bid_spread) + Decimal('0.05')
 
     @property
     def bid_too_close_adjustment_spread(self):
-        return Decimal(self.bid_spread) - Decimal('0.10')
+        return Decimal(self.bid_spread) - Decimal('0.15')

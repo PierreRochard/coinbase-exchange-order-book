@@ -1,23 +1,23 @@
 from pprint import pformat
-from collections import deque
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
-from dateutil.parser import parse
 
 try:
     import ujson as json
 except ImportError:
     import json
+import requests
+import pandas as pd
+import pytz
 
 from dateutil.tz import tzlocal
 from orderbook.tree import Tree
-import requests
 from trading import file_logger
 
 
 class Book(object):
     def __init__(self):
-        self.matches = deque(maxlen=100)
+        self.matches = []
         self.bids = Tree()
         self.asks = Tree()
 
@@ -28,6 +28,11 @@ class Book(object):
         self.average_rate = 0.0
         self.fastest_rate = 0.0
         self.slowest_rate = 0.0
+
+    def populate_matches(self):
+        for match in requests.get('https://api.exchange.coinbase.com/products/BTC-USD/trades').json():
+            match['time'] = datetime.strptime(match['time'], '%Y-%m-%dT%H:%M:%S.%fZ').replace(tzinfo=pytz.UTC)
+            self.matches += [match]
 
     def get_level3(self, json_doc=None):
         if not json_doc:
@@ -57,8 +62,8 @@ class Book(object):
             return True
 
         message_type = message['type']
-        message_time = parse(message['time'])
-        self.last_time = message_time
+        message['time'] = datetime.strptime(message['time'], '%Y-%m-%dT%H:%M:%S.%fZ').replace(tzinfo=pytz.UTC)
+        self.last_time = message['time']
         side = message['side']
 
         if message_type == 'received' and side == 'buy':
@@ -77,11 +82,14 @@ class Book(object):
 
         elif message_type == 'match' and side == 'buy':
             self.bids.match(message['maker_order_id'], Decimal(message['size']))
-            self.matches.appendleft((message_time, side, Decimal(message['size']), Decimal(message['price'])))
+            self.matches += [message]
+            self.clean_matches()
             return True
+
         elif message_type == 'match' and side == 'sell':
             self.asks.match(message['maker_order_id'], Decimal(message['size']))
-            self.matches.appendleft((message_time, side, Decimal(message['size']), Decimal(message['price'])))
+            self.matches += [message]
+            self.clean_matches()
             return True
 
         elif message_type == 'done' and side == 'buy':
@@ -101,3 +109,19 @@ class Book(object):
         else:
             file_logger.error('Unhandled message: {0}'.format(pformat(message)))
             return False
+
+    def clean_matches(self):
+        newest_match = self.matches[-1]['time']
+        oldest = newest_match - timedelta(minutes=60)
+        self.matches = [match for match in self.matches if match['time'] >= oldest]
+
+    def vwap(self, minutes):
+        df = pd.DataFrame(self.matches)
+        df['product'] = df[["price", "size"]].product(axis=1)
+        window = str(minutes) + 'min'
+        df.index = df['time']
+        del df['time']
+        product_resample = df['product'].resample(window, how='sum')
+        volume_resample = df['size'].resample(window, how='sum')
+        vwap = product_resample/volume_resample
+        return round(Decimal(vwap[0]), 2)

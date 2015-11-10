@@ -26,7 +26,7 @@ import websockets
 from trading.openorders import OpenOrders
 from trading.spreads import Spreads
 from orderbook.book import Book
-from trading.strategies import buyer_strategy
+from trading.strategies import vwap_buyer_strategy
 
 ARGS = argparse.ArgumentParser(description='Coinbase Exchange bot.')
 ARGS.add_argument('--c', action='store_true', dest='command_line', default=False, help='Command line output')
@@ -34,6 +34,7 @@ ARGS.add_argument('--t', action='store_true', dest='trading', default=False, hel
 args = ARGS.parse_args()
 
 order_book = Book()
+order_book.populate_matches()
 open_orders = OpenOrders()
 open_orders.cancel_all()
 spreads = Spreads()
@@ -122,16 +123,22 @@ def monitor():
     time.sleep(5)
     while True:
         time.sleep(0.001)
+        vwap = order_book.vwap(20)
         print('Last message: {0:.6f} secs, '
               'Min ask: {1:.2f}, Max bid: {2:.2f}, Spread: {3:.2f}, '
-              'Your ask: {4:.2f}, Your bid: {5:.2f}, Your spread: {6:.2f} '
+              'VWAP: {4:.2f}, Bid: {5:.2f}, Spread: {6:.2f}, '
               'Avg: {7:.10f} Min: {8:.10f} Max: {9:.10f}'.format(
             ((datetime.now(tzlocal()) - order_book.last_time).microseconds * 1e-6),
-            order_book.asks.price_tree.min_key(), order_book.bids.price_tree.max_key(),
+            order_book.asks.price_tree.min_key(),
+            order_book.bids.price_tree.max_key(),
             order_book.asks.price_tree.min_key() - order_book.bids.price_tree.max_key(),
-            open_orders.decimal_open_ask_price, open_orders.decimal_open_bid_price,
-            open_orders.decimal_open_ask_price - open_orders.decimal_open_bid_price,
-            order_book.average_rate*1e-6, order_book.fastest_rate*1e-6, order_book.slowest_rate*1e-6), end='\r')
+            open_orders.decimal_open_bid_price,
+            vwap,
+            open_orders.decimal_open_bid_price - vwap,
+            order_book.average_rate*1e-6,
+            order_book.fastest_rate*1e-6,
+            order_book.slowest_rate*1e-6), end='\r')
+
 
 
 if __name__ == '__main__':
@@ -145,7 +152,7 @@ if __name__ == '__main__':
 
     loop = asyncio.get_event_loop()
     if args.trading:
-        loop.run_in_executor(None, functools.partial(buyer_strategy, order_book, open_orders, spreads))
+        loop.run_in_executor(None, functools.partial(vwap_buyer_strategy, order_book, open_orders, spreads))
         loop.run_in_executor(None, update_balances)
         loop.run_in_executor(None, update_orders)
     if args.command_line:
