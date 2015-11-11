@@ -32,7 +32,7 @@ class Book(object):
     def populate_matches(self):
         for match in requests.get('https://api.exchange.coinbase.com/products/BTC-USD/trades').json():
             match['time'] = datetime.strptime(match['time'], '%Y-%m-%dT%H:%M:%S.%fZ').replace(tzinfo=pytz.UTC)
-            self.matches += [match]
+            self.matches += [{'price': float(match['price']), 'size': float(match['size']), 'time': match['time']}]
 
     def get_level3(self, json_doc=None):
         if not json_doc:
@@ -82,13 +82,13 @@ class Book(object):
 
         elif message_type == 'match' and side == 'buy':
             self.bids.match(message['maker_order_id'], Decimal(message['size']))
-            self.matches += [message]
+            self.matches += [{'price': float(message['price']), 'size': float(message['size']), 'time': message['time']}]
             self.clean_matches()
             return True
 
         elif message_type == 'match' and side == 'sell':
             self.asks.match(message['maker_order_id'], Decimal(message['size']))
-            self.matches += [message]
+            self.matches += [{'price': float(message['price']), 'size': float(message['size']), 'time': message['time']}]
             self.clean_matches()
             return True
 
