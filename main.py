@@ -31,6 +31,7 @@ from trading.strategies import vwap_buyer_strategy
 ARGS = argparse.ArgumentParser(description='Coinbase Exchange bot.')
 ARGS.add_argument('--c', action='store_true', dest='command_line', default=False, help='Command line output')
 ARGS.add_argument('--t', action='store_true', dest='trading', default=False, help='Trade')
+ARGS.add_argument('--d', action='store_true', dest='debug', default=False, help='Debugging')
 args = ARGS.parse_args()
 
 order_book = Book()
@@ -150,6 +151,8 @@ if __name__ == '__main__':
         command_line = True
 
     loop = asyncio.get_event_loop()
+    loop.set_debug(args.debug)
+
     if args.trading:
         loop.run_in_executor(None, functools.partial(vwap_buyer_strategy, order_book, open_orders))
         loop.run_in_executor(None, update_balances)
