@@ -1,3 +1,4 @@
+from copy import deepcopy
 from pprint import pformat
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -34,12 +35,27 @@ class Book(object):
             match['time'] = datetime.strptime(match['time'], '%Y-%m-%dT%H:%M:%S.%fZ').replace(tzinfo=pytz.UTC)
             self.matches += [{'price': float(match['price']), 'size': float(match['size']), 'time': match['time']}]
 
-    def get_level3(self, json_doc=None):
-        if not json_doc:
-            json_doc = requests.get('http://api.exchange.coinbase.com/products/BTC-USD/book', params={'level': 3}).json()
-        [self.bids.insert_order(bid[2], Decimal(bid[1]), Decimal(bid[0]), initial=True) for bid in json_doc['bids']]
-        [self.asks.insert_order(ask[2], Decimal(ask[1]), Decimal(ask[0]), initial=True) for ask in json_doc['asks']]
-        self.level3_sequence = json_doc['sequence']
+    def get_level3(self, json_doc=None, fake_test=False, last_sequence=None):
+        if fake_test:
+            print('getting level 3')
+            from testdata.models import session, Level3s
+            sequence, = (session.query(Level3s.sequence).filter(Level3s.sequence > last_sequence)
+                        .order_by(Level3s.sequence).first())
+            print(sequence, last_sequence)
+            orders = (session.query(Level3s.price, Level3s.size, Level3s.order_id, Level3s.side)
+                      .filter(Level3s.sequence == sequence).distinct())
+            [self.bids.insert_order(bid[2], Decimal(bid[1]), Decimal(bid[0]), initial=True)
+                for bid in orders if bid[3] == 'bid']
+            [self.asks.insert_order(ask[2], Decimal(ask[1]), Decimal(ask[0]), initial=True)
+                for ask in orders if ask[3] == 'ask']
+            self.level3_sequence = sequence
+        else:
+            if not json_doc:
+                json_doc = requests.get('http://api.exchange.coinbase.com/products/BTC-USD/book',
+                                        params={'level': 3}).json()
+            [self.bids.insert_order(bid[2], Decimal(bid[1]), Decimal(bid[0]), initial=True) for bid in json_doc['bids']]
+            [self.asks.insert_order(ask[2], Decimal(ask[1]), Decimal(ask[0]), initial=True) for ask in json_doc['asks']]
+            self.level3_sequence = json_doc['sequence']
 
     def process_message(self, message):
 
@@ -82,13 +98,15 @@ class Book(object):
 
         elif message_type == 'match' and side == 'buy':
             self.bids.match(message['maker_order_id'], Decimal(message['size']))
-            self.matches += [{'price': float(message['price']), 'size': float(message['size']), 'time': message['time']}]
+            self.matches += [
+                {'price': float(message['price']), 'size': float(message['size']), 'time': message['time']}]
             self.clean_matches()
             return True
 
         elif message_type == 'match' and side == 'sell':
             self.asks.match(message['maker_order_id'], Decimal(message['size']))
-            self.matches += [{'price': float(message['price']), 'size': float(message['size']), 'time': message['time']}]
+            self.matches += [
+                {'price': float(message['price']), 'size': float(message['size']), 'time': message['time']}]
             self.clean_matches()
             return True
 
@@ -116,7 +134,8 @@ class Book(object):
         self.matches = [match for match in self.matches if match['time'] >= oldest]
 
     def vwap(self, minutes):
-        df = pd.DataFrame(self.matches)
+        matches = deepcopy(self.matches)
+        df = pd.DataFrame(matches)
         df['size'] = pd.to_numeric(df['size'])
         df['price'] = pd.to_numeric(df['price'])
         df['product'] = df[["price", "size"]].product(axis=1)
@@ -125,5 +144,5 @@ class Book(object):
         del df['time']
         product_resample = df['product'].resample(window, how='sum')
         volume_resample = df['size'].resample(window, how='sum')
-        vwap = product_resample/volume_resample
+        vwap = product_resample / volume_resample
         return round(Decimal(vwap[0]), 2)
