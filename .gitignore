@@ -85,3 +85,4 @@ testdata/*.json
 testdata/db_config.py
 testdata/*.csv
 testdata/.ipynb_checkpoints
+*.csv
