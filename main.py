@@ -17,7 +17,6 @@ except ImportError:
 import logging
 from pprint import pformat
 import random
-from socket import gaierror
 import time
 
 from dateutil.tz import tzlocal
@@ -32,6 +31,8 @@ ARGS = argparse.ArgumentParser(description='Coinbase Exchange bot.')
 ARGS.add_argument('--c', action='store_true', dest='command_line', default=False, help='Command line output')
 ARGS.add_argument('--t', action='store_true', dest='trading', default=False, help='Trade')
 ARGS.add_argument('--d', action='store_true', dest='debug', default=False, help='Debugging')
+ARGS.add_argument('--f', action='store_true', dest='fake_test', default=False, help='Fake test')
+
 args = ARGS.parse_args()
 
 order_book = Book()
@@ -43,11 +44,12 @@ spreads = Spreads()
 
 @asyncio.coroutine
 def websocket_to_order_book():
-    try:
-        coinbase_websocket = yield from websockets.connect("wss://ws-feed.exchange.coinbase.com")
-    except gaierror:
-        order_book_file_logger.error('socket.gaierror - had a problem connecting to Coinbase feed')
-        return
+    if args.fake_test:
+        feed = "ws://localhost:8765"
+    else:
+        feed = "wss://ws-feed.exchange.coinbase.com"
+
+    coinbase_websocket = yield from websockets.connect(feed)
 
     yield from coinbase_websocket.send('{"type": "subscribe", "product_id": "BTC-USD"}')
 
@@ -59,9 +61,9 @@ def websocket_to_order_book():
         if len(messages) > 20:
             break
 
-    order_book.get_level3()
+    order_book.get_level3(fake_test=args.fake_test, last_sequence=int(messages[-1]['sequence']))
 
-    [order_book.process_message(message) for message in messages if message['sequence'] > order_book.level3_sequence]
+    [order_book.process_message(message) for message in messages if int(message['sequence']) > order_book.level3_sequence]
     messages = []
     while True:
         message = yield from coinbase_websocket.recv()
@@ -121,7 +123,7 @@ def update_orders():
 
 
 def monitor():
-    time.sleep(5)
+    time.sleep(10)
     while True:
         time.sleep(1)
         vwap = order_book.vwap(20)
