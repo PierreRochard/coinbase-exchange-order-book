@@ -82,4 +82,6 @@ log.csv
 keys/*
 oldlogs/*
 testdata/*.json
-trading/treasury_config.py
+testdata/db_config.py
+testdata/*.csv
+testdata/.ipynb_checkpoints
