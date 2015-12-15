@@ -1,5 +1,8 @@
+import asyncio
 from pprint import pformat
 from decimal import Decimal
+
+import functools
 
 import requests
 
@@ -29,7 +32,8 @@ class OpenOrders(object):
         if self.open_ask_order_id:
             self.cancel('ask')
 
-    def cancel(self, side):
+    @asyncio.coroutine
+    def cancel(self, loop, side):
         if side == 'bid':
             order_id = self.open_bid_order_id
             price = self.open_bid_price
@@ -40,7 +44,8 @@ class OpenOrders(object):
             self.open_ask_cancelled = True
         else:
             return False
-        response = requests.delete(exchange_api_url + 'orders/' + str(order_id), auth=exchange_auth)
+        future = loop.run_in_executor(None, functools.partial(requests.delete, exchange_api_url + 'orders/' + str(order_id), auth=exchange_auth))
+        response = yield from future
         if response.status_code == 200:
             file_logger.info('canceled {0} {1} @ {2}'.format(side, order_id, price))
         elif 'message' in response.json() and response.json()['message'] == 'order not found':
@@ -50,8 +55,11 @@ class OpenOrders(object):
         else:
             file_logger.error('Unhandled response: {0}'.format((pformat(response.json()))))
 
-    def get_open_orders(self):
-        open_orders = requests.get(exchange_api_url + 'orders', auth=exchange_auth).json()
+    @asyncio.coroutine
+    def get_open_orders(self, loop):
+        future = loop.run_in_executor(None, functools.partial(requests.get, exchange_api_url + 'orders', auth=exchange_auth))
+        open_orders = yield from future
+        open_orders = open_orders.json()
 
         try:
             self.open_bid_order_id = [order['id'] for order in open_orders if order['side'] == 'buy'][0]
@@ -72,11 +80,6 @@ class OpenOrders(object):
             self.open_ask_status = None
             self.open_ask_cancelled = False
             self.open_ask_rejections = Decimal('0.0')
-
-    def get_balances(self):
-        accounts_query = requests.get(exchange_api_url + 'accounts', auth=exchange_auth).json()
-        for account in accounts_query:
-            self.accounts[account['currency']] = account
 
     @property
     def decimal_open_bid_price(self):

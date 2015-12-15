@@ -25,9 +25,6 @@ def run_loop(func):
 
 @asyncio.coroutine
 def run_tk(root, interval=0.05):
-    '''
-    Run a tkinter app in an asyncio event loop.
-    '''
     try:
         while True:
             root.update()
@@ -39,10 +36,6 @@ def run_tk(root, interval=0.05):
 
 @asyncio.coroutine
 def listen_websocket(output):
-    '''
-    Connect to a websocket url, then print messages received on the connection
-    until closed by the server.
-    '''
     coinbase_websocket = yield from websockets.connect("wss://ws-feed.exchange.coinbase.com")
     yield from coinbase_websocket.send('{"type": "subscribe", "product_id": "BTC-USD"}')
     messages = []
@@ -65,7 +58,7 @@ def main():
     output.grid()
     output.pack(expand=1, fill=tkinter.BOTH)
 
-    asyncio.async(listen_websocket(output))
+    asyncio.ensure_future(listen_websocket(output))
 
     yield from run_tk(root)
 

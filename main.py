@@ -3,11 +3,15 @@ from datetime import datetime
 from decimal import Decimal
 import argparse
 
+import aiohttp
+
 import functools
 import pytz
-from trading import file_logger as trading_file_logger
+import requests
+from trading import file_logger as trading_file_logger, file_logger
 from orderbook import file_logger as order_book_file_logger
 import numpy
+from trading.exchange import exchange_api_url, exchange_auth
 
 try:
     import ujson as json
@@ -25,7 +29,7 @@ import websockets
 from trading.openorders import OpenOrders
 from trading.spreads import Spreads
 from orderbook.book import Book
-from trading.strategies import vwap_buyer_strategy
+# from trading.strategies import vwap_buyer_strategy
 
 ARGS = argparse.ArgumentParser(description='Coinbase Exchange bot.')
 ARGS.add_argument('--c', action='store_true', dest='command_line', default=False, help='Command line output')
@@ -106,41 +110,99 @@ def websocket_to_order_book():
                     open_orders.open_bid_cancelled = False
                 else:
                     open_orders.open_bid_status = message['type']
+            yield from vwap_buyer_strategy()
+        if args.command_line:
+            yield from monitor()
 
 
+@asyncio.coroutine
 def update_balances():
-    while True:
-        open_orders.get_balances()
-        time.sleep(30)
+    future = loop.run_in_executor(None, functools.partial(requests.get, exchange_api_url + 'accounts', auth=exchange_auth))
+    accounts_query = yield from future
+    for account in accounts_query.json():
+        open_orders.accounts[account['currency']] = account
+    loop.call_later(180, asyncio.ensure_future, update_balances())
 
 
+@asyncio.coroutine
 def update_orders():
-    time.sleep(5)
-    open_orders.cancel_all()
-    while True:
-        open_orders.get_open_orders()
-        time.sleep(60*5)
+    yield from open_orders.get_open_orders(loop)
+    loop.call_later(60, asyncio.ensure_future, update_orders())
 
 
+@asyncio.coroutine
+def update_vwap():
+    order_book.vwap = 20
+    loop.call_later(60, asyncio.ensure_future, update_vwap())
+
+
+@asyncio.coroutine
 def monitor():
-    time.sleep(10)
-    while True:
-        time.sleep(1)
-        vwap = order_book.vwap(20)
-        print('Last message: {0:.6f} secs, '
-              'Min ask: {1:.2f}, Max bid: {2:.2f}, Spread: {3:.2f}, '
-              'VWAP: {4:.2f}, Bid: {5:.2f}, Spread: {6:.2f}, '
-              'Avg: {7:.10f} Min: {8:.10f} Max: {9:.10f}'.format(
-            ((datetime.now(tzlocal()) - order_book.last_time).microseconds * 1e-6),
-            order_book.asks.price_tree.min_key(),
-            order_book.bids.price_tree.max_key(),
-            order_book.asks.price_tree.min_key() - order_book.bids.price_tree.max_key(),
-            vwap,
-            open_orders.decimal_open_bid_price,
-            open_orders.decimal_open_bid_price - vwap,
-            order_book.average_rate*1e-6,
-            order_book.fastest_rate*1e-6,
-            order_book.slowest_rate*1e-6), end='\r')
+    vwap = order_book.vwap
+    print('Last message: {0:.6f} secs, '
+          'Min ask: {1:.2f}, Max bid: {2:.2f}, Spread: {3:.2f}, '
+          'VWAP: {4:.2f}, Bid: {5:.2f}, Spread: {6:.2f}, '
+          'Avg: {7:.4f}'.format(
+        ((datetime.now(tzlocal()) - order_book.last_time).microseconds * 1e-6),
+        order_book.asks.price_tree.min_key(),
+        order_book.bids.price_tree.max_key(),
+        order_book.asks.price_tree.min_key() - order_book.bids.price_tree.max_key(),
+        vwap,
+        open_orders.decimal_open_bid_price,
+        open_orders.decimal_open_bid_price - vwap,
+        order_book.average_rate*1e-6), end='\r')
+
+
+@asyncio.coroutine
+def vwap_buyer_strategy():
+    if not open_orders.open_bid_order_id:
+        vwap = order_book.vwap
+        best_bid = order_book.bids.price_tree.max_key()
+        vwap_bid = round(vwap * Decimal('0.99') - open_orders.open_bid_rejections, 2)
+        if vwap_bid <= best_bid and 0.01 * float(vwap_bid) < float(open_orders.accounts['USD']['available']):
+            order = {'size': '0.01',
+                     'price': str(vwap_bid),
+                     'side': 'buy',
+                     'product_id': 'BTC-USD',
+                     'post_only': True}
+            future = loop.run_in_executor(None, functools.partial(requests.post, exchange_api_url + 'orders',
+                                                                  json=order, auth=exchange_auth))
+            response = yield from future
+            try:
+                response = response.json()
+            except ValueError:
+                file_logger.error('Unhandled response: {0}'.format(pformat(response)))
+            if 'status' in response and response['status'] == 'pending':
+                open_orders.open_bid_order_id = response['id']
+                open_orders.open_bid_price = vwap_bid
+                open_orders.open_bid_rejections = Decimal('0.0')
+                file_logger.info('new bid @ {0}'.format(vwap_bid))
+            elif 'status' in response and response['status'] == 'rejected':
+                open_orders.open_bid_order_id = None
+                open_orders.open_bid_price = None
+                open_orders.open_bid_rejections += Decimal('0.04')
+                file_logger.warn('rejected: new bid @ {0}'.format(vwap_bid))
+            elif 'message' in response and response['message'] == 'Insufficient funds':
+                open_orders.open_bid_order_id = None
+                open_orders.open_bid_price = None
+                file_logger.warn('Insufficient USD')
+            elif 'message' in response and response['message'] == 'request timestamp expired':
+                open_orders.open_bid_order_id = None
+                open_orders.open_bid_price = None
+                file_logger.warn('Request timestamp expired')
+            else:
+                file_logger.error('Unhandled response: {0}'.format(pformat(response)))
+
+    if open_orders.open_bid_order_id and not open_orders.open_bid_cancelled:
+        vwap = order_book.vwap
+        vwap_adj = round(vwap * Decimal('0.985'), 2)
+        bid_too_far_out = open_orders.open_bid_price < vwap_adj
+        if bid_too_far_out:
+            file_logger.info('CANCEL: open bid {0} too far from best bid: {1} spread: {2}'.format(
+                open_orders.open_bid_price,
+                order_book.bids.price_tree.max_key(),
+                order_book.bids.price_tree.max_key() - open_orders.open_bid_price))
+            yield from open_orders.cancel(loop, 'bid')
 
 
 if __name__ == '__main__':
@@ -156,11 +218,10 @@ if __name__ == '__main__':
     loop.set_debug(args.debug)
 
     if args.trading:
-        loop.run_in_executor(None, functools.partial(vwap_buyer_strategy, order_book, open_orders))
-        loop.run_in_executor(None, update_balances)
-        loop.run_in_executor(None, update_orders)
-    if args.command_line:
-        loop.run_in_executor(None, monitor)
+        loop.call_soon(asyncio.ensure_future, update_balances())
+        loop.call_soon(asyncio.ensure_future, update_orders())
+        loop.call_soon(asyncio.ensure_future, update_vwap())
+
     n = 0
     while True:
         start_time = loop.time()

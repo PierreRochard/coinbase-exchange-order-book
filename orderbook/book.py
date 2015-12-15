@@ -1,7 +1,12 @@
+import asyncio
+
 from copy import deepcopy
 from pprint import pformat
 from datetime import datetime, timedelta
 from decimal import Decimal
+import time
+
+from trading.exchange import exchange_api_url, exchange_auth
 
 try:
     import ujson as json
@@ -29,6 +34,8 @@ class Book(object):
         self.average_rate = 0.0
         self.fastest_rate = 0.0
         self.slowest_rate = 0.0
+
+        self._vwap = None
 
     def populate_matches(self):
         for match in requests.get('https://api.exchange.coinbase.com/products/BTC-USD/trades').json():
@@ -133,7 +140,20 @@ class Book(object):
         oldest = newest_match - timedelta(minutes=60)
         self.matches = [match for match in self.matches if match['time'] >= oldest]
 
+    @property
+    def vwap(self):
+        return self._vwap
+
+    @vwap.setter
     def vwap(self, minutes):
+        # if not self._vwap:
+        #     trades = requests.get(exchange_api_url + 'products/BTC-USD/trades', auth=exchange_auth).json()
+        #     for trade in trades:
+        #         trade['time'] = datetime.strptime(trade['time'],
+        #                                           '%Y-%m-%dT%H:%M:%S.%fZ').replace(tzinfo=pytz.UTC)
+        #         self.matches += [trade]
+        #     self.clean_matches()
+        start_time = time.time()
         matches = deepcopy(self.matches)
         df = pd.DataFrame(matches)
         df['size'] = pd.to_numeric(df['size'])
@@ -145,4 +165,5 @@ class Book(object):
         product_resample = df['product'].resample(window, how='sum')
         volume_resample = df['size'].resample(window, how='sum')
         vwap = product_resample / volume_resample
-        return round(Decimal(vwap[0]), 2)
+        self._vwap = round(Decimal(vwap[0]), 2)
+        print("\n--- %s seconds ---\n" % (time.time() - start_time))
