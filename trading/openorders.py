@@ -33,7 +33,7 @@ class OpenOrders(object):
             self.cancel('ask')
 
     @asyncio.coroutine
-    def cancel(self, loop, side):
+    def cancel(self, side):
         if side == 'bid':
             order_id = self.open_bid_order_id
             price = self.open_bid_price
@@ -44,6 +44,7 @@ class OpenOrders(object):
             self.open_ask_cancelled = True
         else:
             return False
+        loop = asyncio.get_event_loop()
         future = loop.run_in_executor(None, functools.partial(requests.delete, exchange_api_url + 'orders/' + str(order_id), auth=exchange_auth))
         response = yield from future
         if response.status_code == 200:

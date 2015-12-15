@@ -184,3 +184,56 @@ def buyer_strategy(order_book, open_orders, spreads):
                         order_book.bids.price_tree.max_key() - open_orders.open_bid_price))
                 open_orders.cancel('bid')
                 continue
+
+
+@asyncio.coroutine
+def vwap_buyer_strategy(order_book, open_orders):
+    if not open_orders.open_bid_order_id:
+        vwap = order_book.vwap
+        best_bid = order_book.bids.price_tree.max_key()
+        vwap_bid = round(vwap * Decimal('0.99') - open_orders.open_bid_rejections, 2)
+        if vwap_bid <= best_bid and 0.01 * float(vwap_bid) < float(open_orders.accounts['USD']['available']):
+            order = {'size': '0.01',
+                     'price': str(vwap_bid),
+                     'side': 'buy',
+                     'product_id': 'BTC-USD',
+                     'post_only': True}
+            loop = asyncio.get_event_loop()
+            future = loop.run_in_executor(None, functools.partial(requests.post, exchange_api_url + 'orders',
+                                                                  json=order, auth=exchange_auth))
+            response = yield from future
+            try:
+                response = response.json()
+            except ValueError:
+                file_logger.error('Unhandled response: {0}'.format(pformat(response)))
+            if 'status' in response and response['status'] == 'pending':
+                open_orders.open_bid_order_id = response['id']
+                open_orders.open_bid_price = vwap_bid
+                open_orders.open_bid_rejections = Decimal('0.0')
+                file_logger.info('new bid @ {0}'.format(vwap_bid))
+            elif 'status' in response and response['status'] == 'rejected':
+                open_orders.open_bid_order_id = None
+                open_orders.open_bid_price = None
+                open_orders.open_bid_rejections += Decimal('0.04')
+                file_logger.warn('rejected: new bid @ {0}'.format(vwap_bid))
+            elif 'message' in response and response['message'] == 'Insufficient funds':
+                open_orders.open_bid_order_id = None
+                open_orders.open_bid_price = None
+                file_logger.warn('Insufficient USD')
+            elif 'message' in response and response['message'] == 'request timestamp expired':
+                open_orders.open_bid_order_id = None
+                open_orders.open_bid_price = None
+                file_logger.warn('Request timestamp expired')
+            else:
+                file_logger.error('Unhandled response: {0}'.format(pformat(response)))
+
+    if open_orders.open_bid_order_id and not open_orders.open_bid_cancelled:
+        vwap = order_book.vwap
+        vwap_adj = round(vwap * Decimal('0.985'), 2)
+        bid_too_far_out = open_orders.open_bid_price < vwap_adj
+        if bid_too_far_out:
+            file_logger.info('CANCEL: open bid {0} too far from best bid: {1} spread: {2}'.format(
+                open_orders.open_bid_price,
+                order_book.bids.price_tree.max_key(),
+                order_book.bids.price_tree.max_key() - open_orders.open_bid_price))
+            yield from open_orders.cancel('bid')

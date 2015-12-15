@@ -67,6 +67,8 @@ class Book(object):
     def process_message(self, message):
 
         new_sequence = int(message['sequence'])
+        if new_sequence <= self.last_sequence:
+            return True
 
         if new_sequence <= self.level3_sequence:
             return True
@@ -146,14 +148,6 @@ class Book(object):
 
     @vwap.setter
     def vwap(self, minutes):
-        # if not self._vwap:
-        #     trades = requests.get(exchange_api_url + 'products/BTC-USD/trades', auth=exchange_auth).json()
-        #     for trade in trades:
-        #         trade['time'] = datetime.strptime(trade['time'],
-        #                                           '%Y-%m-%dT%H:%M:%S.%fZ').replace(tzinfo=pytz.UTC)
-        #         self.matches += [trade]
-        #     self.clean_matches()
-        start_time = time.time()
         matches = deepcopy(self.matches)
         df = pd.DataFrame(matches)
         df['size'] = pd.to_numeric(df['size'])
@@ -166,4 +160,3 @@ class Book(object):
         volume_resample = df['size'].resample(window, how='sum')
         vwap = product_resample / volume_resample
         self._vwap = round(Decimal(vwap[0]), 2)
-        print("\n--- %s seconds ---\n" % (time.time() - start_time))
