@@ -6,8 +6,11 @@ import argparse
 import functools
 import pytz
 import requests
+import sys
+from quamash import QApplication, QEventLoop, QThreadExecutor
 
 from aws_config import second_tier_connection
+from gui.qt_interface import ApplicationWindow, MyMplCanvas
 from information import monitor
 from trading import file_logger as trading_file_logger, file_logger
 from orderbook import file_logger as order_book_file_logger
@@ -33,20 +36,6 @@ from trading.spreads import Spreads
 from orderbook.book import Book
 # from trading.strategies import vwap_buyer_strategy
 
-ARGS = argparse.ArgumentParser(description='Coinbase Exchange bot.')
-ARGS.add_argument('--c', action='store_true', dest='command_line', default=False, help='Command line output')
-ARGS.add_argument('--t', action='store_true', dest='trading', default=False, help='Trade')
-ARGS.add_argument('--d', action='store_true', dest='debug', default=False, help='Debugging')
-ARGS.add_argument('--f', action='store_true', dest='fake_test', default=False, help='Fake test')
-ARGS.add_argument('-2', action='store_true', dest='second_tier_feed', default=False, help='Second tier feed')
-
-args = ARGS.parse_args()
-
-order_book = Book()
-order_book.populate_matches()
-open_orders = OpenOrders()
-open_orders.cancel_all()
-spreads = Spreads()
 
 
 @asyncio.coroutine
@@ -123,6 +112,10 @@ def websocket_to_order_book():
             yield from vwap_buyer_strategy(order_book, open_orders)
         if args.command_line:
             yield from monitor(order_book, open_orders)
+        if args.qt:
+            with QThreadExecutor(1) as exec:
+                yield from loop.run_in_executor(exec, functools.partial(MyMplCanvas.update_figure,
+                                                                        aw.dc, order_book.matches))
 
 
 @asyncio.coroutine
@@ -148,6 +141,22 @@ def update_vwap():
 
 
 if __name__ == '__main__':
+    ARGS = argparse.ArgumentParser(description='Coinbase Exchange bot.')
+    ARGS.add_argument('--c', action='store_true', dest='command_line', default=False, help='Command line output')
+    ARGS.add_argument('--t', action='store_true', dest='trading', default=False, help='Trade')
+    ARGS.add_argument('--d', action='store_true', dest='debug', default=False, help='Debugging')
+    ARGS.add_argument('--f', action='store_true', dest='fake_test', default=False, help='Fake test')
+    ARGS.add_argument('-2', action='store_true', dest='second_tier_feed', default=False, help='Second tier feed')
+    ARGS.add_argument('--q', action='store_true', dest='qt', default=False, help='QT')
+
+    args = ARGS.parse_args()
+
+    order_book = Book()
+    order_book.populate_matches()
+    open_orders = OpenOrders()
+    open_orders.cancel_all()
+    spreads = Spreads()
+
     if args.command_line:
         stream_handler = logging.StreamHandler()
         stream_handler.setFormatter(logging.Formatter('\n%(asctime)s, %(levelname)s, %(message)s'))
@@ -156,24 +165,34 @@ if __name__ == '__main__':
         order_book_file_logger.addHandler(stream_handler)
         command_line = True
 
-    loop = asyncio.get_event_loop()
+    if args.qt:
+        app = QApplication(sys.argv)
+        aw = ApplicationWindow()
+        aw.show()
+        loop = QEventLoop(app)
+        asyncio.set_event_loop(loop)
+    else:
+        loop = asyncio.get_event_loop()
     loop.set_debug(args.debug)
 
     if args.trading:
         loop.call_soon(asyncio.ensure_future, update_balances())
         loop.call_soon(asyncio.ensure_future, update_orders())
         loop.call_soon(asyncio.ensure_future, update_vwap())
-
-    n = 0
-    while True:
-        start_time = loop.time()
-        loop.run_until_complete(websocket_to_order_book())
-        end_time = loop.time()
-        seconds = end_time - start_time
-        if seconds < 2:
-            n += 1
-            sleep_time = (2 ** n) + (random.randint(0, 1000) / 1000)
-            order_book_file_logger.error('Websocket connectivity problem, going to sleep for {0}'.format(sleep_time))
-            time.sleep(sleep_time)
-            if n > 6:
-                n = 0
+    else:
+        n = 0
+        while True:
+            start_time = loop.time()
+            try:
+                loop.run_until_complete(websocket_to_order_book())
+            except:
+                pass
+            end_time = loop.time()
+            seconds = end_time - start_time
+            if seconds < 2:
+                n += 1
+                sleep_time = (2 ** n) + (random.randint(0, 1000) / 1000)
+                order_book_file_logger.error('Websocket connectivity problem, going to sleep for {0}'.format(sleep_time))
+                time.sleep(sleep_time)
+                if n > 6:
+                    n = 0
