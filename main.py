@@ -1,4 +1,5 @@
 import asyncio
+from copy import deepcopy
 from datetime import datetime
 from decimal import Decimal
 import argparse
@@ -10,7 +11,7 @@ import sys
 from quamash import QApplication, QEventLoop, QThreadExecutor
 
 from aws_config import second_tier_connection
-from gui.qt_interface import ApplicationWindow, MyMplCanvas
+from gui.qt_interface import ApplicationWindow, MatchesCanvas, OrderbookCanvas
 from information import monitor
 from trading import file_logger as trading_file_logger, file_logger
 from orderbook import file_logger as order_book_file_logger
@@ -89,7 +90,7 @@ def websocket_to_order_book():
                 order_book.slowest_rate = max(diff)
         if not order_book.process_message(message):
             print(pformat(message))
-            return False
+            raise Exception
         if args.trading:
             if 'order_id' in message and message['order_id'] == open_orders.open_ask_order_id:
                 if message['type'] == 'done':
@@ -113,9 +114,12 @@ def websocket_to_order_book():
         if args.command_line:
             yield from monitor(order_book, open_orders)
         if args.qt:
-            with QThreadExecutor(1) as exec:
-                yield from loop.run_in_executor(exec, functools.partial(MyMplCanvas.update_figure,
-                                                                        aw.dc, order_book.matches))
+            yield from application_window.matches.update_figure(order_book.matches)
+            # yield from application_window.orderbook.update_figure(order_book)
+            with QThreadExecutor() as exec:
+                yield from loop.run_in_executor(exec, functools.partial(OrderbookCanvas.update_figure,
+                                                                        application_window.orderbook,
+                                                                        deepcopy(order_book)))
 
 
 @asyncio.coroutine
@@ -167,8 +171,8 @@ if __name__ == '__main__':
 
     if args.qt:
         app = QApplication(sys.argv)
-        aw = ApplicationWindow()
-        aw.show()
+        application_window = ApplicationWindow()
+        application_window.show()
         loop = QEventLoop(app)
         asyncio.set_event_loop(loop)
     else:

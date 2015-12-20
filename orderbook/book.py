@@ -106,14 +106,14 @@ class Book(object):
             return True
 
         elif message_type == 'match' and side == 'buy':
-            self.bids.match(message['maker_order_id'], Decimal(message['size']))
+            self.bids.match(message['maker_order_id'], Decimal(message['size']), Decimal(message['price']))
             self.matches += [
                 {'price': float(message['price']), 'size': float(message['size']), 'time': message['time']}]
             self.clean_matches()
             return True
 
         elif message_type == 'match' and side == 'sell':
-            self.asks.match(message['maker_order_id'], Decimal(message['size']))
+            self.asks.match(message['maker_order_id'], Decimal(message['size']), Decimal(message['price']))
             self.matches += [
                 {'price': float(message['price']), 'size': float(message['size']), 'time': message['time']}]
             self.clean_matches()
@@ -127,10 +127,12 @@ class Book(object):
             return True
 
         elif message_type == 'change' and side == 'buy':
-            self.bids.change(message['order_id'], Decimal(message['new_size']))
+            self.bids.change(message['order_id'], Decimal(message['new_size']), Decimal(message['old_size']),
+                             Decimal(message['price']))
             return True
         elif message_type == 'change' and side == 'sell':
-            self.asks.change(message['order_id'], Decimal(message['new_size']))
+            self.asks.change(message['order_id'], Decimal(message['new_size']), Decimal(message['old_size']),
+                             Decimal(message['price']))
             return True
 
         else:
