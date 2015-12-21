@@ -1,4 +1,6 @@
 import asyncio
+from concurrent.futures import ProcessPoolExecutor
+from functools import partial
 from pprint import pformat
 
 import matplotlib.pyplot as plt
@@ -40,6 +42,28 @@ class MatchesCanvas(FigureCanvasQTAgg):
         self.draw()
 
 
+def calculate_orderbook(order_book):
+    bids = []
+    best_bid = order_book.bids.price_tree.max_key()
+    for price, orders in order_book.bids.price_map.items():
+        if price > (best_bid - best_bid*Decimal('0.01')):
+            bids += [{'price': price, 'quantity': sum(order['size'] for order in orders)}]
+
+    asks = []
+    best_ask = order_book.asks.price_tree.min_key()
+    for price, orders in order_book.asks.price_map.items():
+        if price < (best_ask + best_ask*Decimal('0.01')):
+            asks += [{'price': price, 'quantity': sum(order['size'] for order in orders)}]
+    bids = pd.DataFrame(bids)
+    asks = pd.DataFrame(asks)
+    bids = bids.sort_values('price', ascending=False)
+    bids['cumulative_quantity'] = bids['quantity'].cumsum()
+    bids = bids.sort_values('price', ascending=True)
+    asks = asks.sort_values('price')
+    asks['cumulative_quantity'] = asks['quantity'].cumsum()
+    return (bids, asks)
+
+
 class OrderbookCanvas(FigureCanvasQTAgg):
     """Ultimately, this is a QWidget (as well as a FigureCanvasQTAggAgg, etc.)."""
 
@@ -57,24 +81,9 @@ class OrderbookCanvas(FigureCanvasQTAgg):
 
     @asyncio.coroutine
     def update_figure(self, order_book):
-        bids = []
-        best_bid = order_book.bids.price_tree.max_key()
-        for price, orders in order_book.bids.price_map.items():
-            if price > (best_bid - best_bid*Decimal('0.02')):
-                bids += [{'price': price, 'quantity': sum(order['size'] for order in orders)}]
-
-        asks = []
-        best_ask = order_book.asks.price_tree.min_key()
-        for price, orders in order_book.asks.price_map.items():
-            if price < (best_ask + best_ask*Decimal('0.02')):
-                asks += [{'price': price, 'quantity': sum(order['size'] for order in orders)}]
-        bids = pd.DataFrame(bids)
-        asks = pd.DataFrame(asks)
-        bids = bids.sort_values('price', ascending=False)
-        bids['cumulative_quantity'] = bids['quantity'].cumsum()
-        bids = bids.sort_values('price', ascending=True)
-        asks = asks.sort_values('price')
-        asks['cumulative_quantity'] = asks['quantity'].cumsum()
+        loop = asyncio.get_event_loop()
+        executor = ProcessPoolExecutor(2)
+        bids, asks = yield from loop.run_in_executor(executor, partial(calculate_orderbook, order_book))
         self.axes.plot(bids['price'], bids['cumulative_quantity'], 'g', asks['price'], asks['cumulative_quantity'], 'r')
         self.axes.get_xaxis().set_major_formatter(FormatStrFormatter('%.2f'))
         self.axes.get_yaxis().set_major_formatter(FormatStrFormatter('%.2f'))

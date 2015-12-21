@@ -115,11 +115,11 @@ def websocket_to_order_book():
             yield from monitor(order_book, open_orders)
         if args.qt:
             yield from application_window.matches.update_figure(order_book.matches)
-            # yield from application_window.orderbook.update_figure(order_book)
-            with QThreadExecutor() as exec:
-                yield from loop.run_in_executor(exec, functools.partial(OrderbookCanvas.update_figure,
-                                                                        application_window.orderbook,
-                                                                        deepcopy(order_book)))
+            yield from application_window.orderbook.update_figure(order_book)
+            # with QThreadExecutor() as exec:
+            #     yield from loop.run_in_executor(exec, functools.partial(OrderbookCanvas.update_figure,
+            #                                                             application_window.orderbook,
+            #                                                             deepcopy(order_book)))
 
 
 @asyncio.coroutine
