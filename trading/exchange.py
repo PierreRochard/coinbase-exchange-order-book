@@ -1,4 +1,4 @@
-# From https://docs.exchange.coinbase.com/#signing-a-message
+# From https://docs.pro.coinbase.com/#signing-a-message
 
 import time
 
@@ -31,7 +31,7 @@ class CoinbaseExchangeAuthentication(AuthBase):
         })
         return request
 
-exchange_api_url = 'https://api.exchange.coinbase.com/'
+exchange_api_url = 'https://api.pro.coinbase.com/'
 
 exchange_auth = CoinbaseExchangeAuthentication(COINBASE_EXCHANGE_API_KEY, COINBASE_EXCHANGE_API_SECRET,
                                                COINBASE_EXCHANGE_API_PASSPHRASE)

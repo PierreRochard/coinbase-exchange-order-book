@@ -42,7 +42,7 @@ spreads = Spreads()
 @asyncio.coroutine
 def websocket_to_order_book():
     try:
-        coinbase_websocket = yield from websockets.connect("wss://ws-feed.exchange.coinbase.com")
+        coinbase_websocket = yield from websockets.connect("wss://ws-feed.pro.coinbase.com")
     except gaierror:
         order_book_file_logger.error('socket.gaierror - had a problem connecting to Coinbase feed')
         return

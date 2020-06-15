@@ -31,7 +31,7 @@ class Book(object):
 
     def get_level3(self, json_doc=None):
         if not json_doc:
-            json_doc = requests.get('http://api.exchange.coinbase.com/products/BTC-USD/book', params={'level': 3}).json()
+            json_doc = requests.get('http://api.pro.coinbase.com/products/BTC-USD/book', params={'level': 3}).json()
         [self.bids.insert_order(bid[2], Decimal(bid[1]), Decimal(bid[0]), initial=True) for bid in json_doc['bids']]
         [self.asks.insert_order(ask[2], Decimal(ask[1]), Decimal(ask[0]), initial=True) for ask in json_doc['asks']]
         self.level3_sequence = json_doc['sequence']
