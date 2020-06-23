@@ -20,17 +20,17 @@ end = begin + timedelta(minutes=minutes)
 
 def get_beginning_level_3():
     global beginning_level_3
-    beginning_level_3 = requests.get('https://api.exchange.coinbase.com/products/BTC-USD/book?level=3').json()
+    beginning_level_3 = requests.get('https://api.pro.coinbase.com/products/BTC-USD/book?level=3').json()
 
 
 def get_ending_level_3():
     global ending_level_3
-    ending_level_3 = requests.get('https://api.exchange.coinbase.com/products/BTC-USD/book?level=3').json()
+    ending_level_3 = requests.get('https://api.pro.coinbase.com/products/BTC-USD/book?level=3').json()
 
 
 @asyncio.coroutine
 def get_websocket_data():
-    coinbase_websocket = yield from websockets.connect("wss://ws-feed.exchange.coinbase.com")
+    coinbase_websocket = yield from websockets.connect("wss://ws-feed.pro.coinbase.com")
     yield from coinbase_websocket.send('{"type": "subscribe", "product_id": "BTC-USD"}')
     global messages
     global latencies
